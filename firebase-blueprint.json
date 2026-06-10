@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile containing roles and metadata for administrative and chalet owner access.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique user id." },
+        "username": { "type": "string", "description": "Owner username for login." },
+        "role": { "type": "string", "enum": ["admin", "owner"], "description": "User security role." },
+        "phone": { "type": "string", "description": "Owner WhatsApp or phone number." },
+        "password": { "type": "string", "description": "Secure password for first setup." },
+        "requiresPasswordChange": { "type": "boolean", "description": "Whether the user must change password on first login." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." }
+      },
+      "required": ["uid", "username", "role", "requiresPasswordChange"]
+    },
+    "Chalet": {
+      "title": "Chalet",
+      "description": "Chalet accommodation listing in Porto South Beach Sokhna.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique chalet identifier." },
+        "name": { "type": "string", "description": "Name or block number of the chalet." },
+        "description": { "type": "string", "description": "Detailed description of contents, layout, and view." },
+        "ownerId": { "type": "string", "description": "The UID of the chalet owner." },
+        "ownerName": { "type": "string", "description": "The visual name of the owner." },
+        "pricePerNight": { "type": "number", "description": "Cost per night in EGP." },
+        "roomsCount": { "type": "number", "description": "Number of bedrooms available." },
+        "bathroomsCount": { "type": "number", "description": "Number of bathrooms available." },
+        "locationLink": { "type": "string", "description": "Google Earth / Google Maps coordinate link." },
+        "images": { "type": "array", "description": "List of hosted image URLs." },
+        "phone": { "type": "string", "description": "Contact number representing the chalet owner." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." }
+      },
+      "required": ["id", "name", "ownerId", "pricePerNight", "roomsCount", "locationLink"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Rental reservation records for a specific chalet block.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique booking reference." },
+        "chaletId": { "type": "string", "description": "Target chalet id." },
+        "chaletName": { "type": "string", "description": "Visual name of chalet booked." },
+        "ownerId": { "type": "string", "description": "Owner userId." },
+        "customerName": { "type": "string", "description": "Full name of the reserving customer." },
+        "customerPhone": { "type": "string", "description": "Active WhatsApp/mobile of customer." },
+        "customerLocation": { "type": "string", "description": "Customer address or Google Earth link." },
+        "startDate": { "type": "string", "format": "date", "description": "Start date of booking (YYYY-MM-DD)." },
+        "endDate": { "type": "string", "format": "date", "description": "End date of booking (YYYY-MM-DD)." },
+        "totalPrice": { "type": "number", "description": "Calculated total price of the stay." },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled", "rejected"], "description": "Status of the booking." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp." }
+      },
+      "required": ["id", "chaletId", "ownerId", "customerName", "customerPhone", "startDate", "endDate", "totalPrice", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Reviews left by customers for Sokhna chalets.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Review ID." },
+        "chaletId": { "type": "string", "description": "Associated chalet ID." },
+        "customerName": { "type": "string", "description": "Reviewer display name." },
+        "rating": { "type": "number", "description": "Rating score out of 5." },
+        "comment": { "type": "string", "description": "Review remarks." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Review submit timestamp." }
+      },
+      "required": ["id", "chaletId", "customerName", "rating", "comment"]
+    },
+    "SiteConfig": {
+      "title": "Site Config",
+      "description": "Customizable homepage metadata and branding assets.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID, should always be 'site-config'." },
+        "siteName": { "type": "string", "description": "Branded name of the portal." },
+        "logoUrl": { "type": "string", "description": "Branded logo image URL." },
+        "backgroundImageUrl": { "type": "string", "description": "Hero background image URL." },
+        "lastUpdatedBy": { "type": "string", "description": "UID of the Admin who last saved configurations." }
+      },
+      "required": ["id", "siteName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores credentials and permissions for users."
+    },
+    "/chalets/{chaletId}": {
+      "schema": "Chalet",
+      "description": "Stores individual chalet accommodations available."
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Tracks and handles reservation requests."
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Tracks guest feedback and ratings."
+    },
+    "/settings/{settingsId}": {
+      "schema": "SiteConfig",
+      "description": "Tracks layout properties, logo, and visual settings."
+    }
+  }
+}

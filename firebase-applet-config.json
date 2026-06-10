@@ -1,0 +1,11 @@
+{
+  "projectId": "porto-south-beach",
+  "appId": "1:462948835937:web:87c429ed6d1654233fc020",
+  "apiKey": "AIzaSyDVqVhSo6fyUT9QNdTVYPu3cgIDMyggtQM",
+  "authDomain": "porto-south-beach.firebaseapp.com",
+  "databaseURL": "https://porto-south-beach-default-rtdb.firebaseio.com",
+  "firestoreDatabaseId": "",
+  "storageBucket": "porto-south-beach.firebasestorage.app",
+  "messagingSenderId": "462948835937",
+  "measurementId": "G-9VNHRYNG86"
+}

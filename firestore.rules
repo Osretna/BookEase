@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUserRole(role) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    function isAdmin() {
+      return isUserRole('admin') || request.auth.uid == 'admin';
+    }
+
+    function isOwner() {
+      return isUserRole('owner');
+    }
+
+    // Users validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'username', 'role', 'requiresPasswordChange']) &&
+        data.uid is string && data.uid.size() <= 128 &&
+        data.username is string && data.username.size() <= 100 &&
+        data.role in ['admin', 'owner'] &&
+        data.requiresPasswordChange is bool;
+    }
+
+    // Chalets validation
+    function isValidChalet(data) {
+      return data.keys().hasAll(['id', 'name', 'ownerId', 'pricePerNight', 'roomsCount', 'bathroomsCount', 'locationLink', 'phone']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.name is string && data.name.size() <= 200 &&
+        data.ownerId is string && data.ownerId.size() <= 128 &&
+        data.pricePerNight is number && data.pricePerNight > 0 &&
+        data.roomsCount is number && data.roomsCount >= 0 &&
+        data.bathroomsCount is number && data.bathroomsCount >= 0 &&
+        data.locationLink is string && data.locationLink.size() <= 500 &&
+        data.phone is string && data.phone.size() <= 50;
+    }
+
+    // Bookings validation
+    function isValidBooking(data) {
+      return data.keys().hasAll(['id', 'chaletId', 'ownerId', 'customerName', 'customerPhone', 'customerLocation', 'startDate', 'endDate', 'totalPrice', 'status']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.chaletId is string && data.chaletId.size() <= 128 &&
+        data.ownerId is string && data.ownerId.size() <= 128 &&
+        data.customerName is string && data.customerName.size() <= 200 &&
+        data.customerPhone is string && data.customerPhone.size() <= 50 &&
+        data.customerLocation is string && data.customerLocation.size() <= 500 &&
+        data.startDate is string && data.startDate.size() == 10 &&
+        data.endDate is string && data.endDate.size() == 10 &&
+        data.totalPrice is number && data.totalPrice >= 0 &&
+        data.status in ['pending', 'confirmed', 'cancelled', 'rejected'];
+    }
+
+    // Reviews validation
+    function isValidReview(data) {
+      return data.keys().hasAll(['id', 'chaletId', 'customerName', 'rating', 'comment']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.chaletId is string && data.chaletId.size() <= 128 &&
+        data.customerName is string && data.customerName.size() <= 100 &&
+        data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+        data.comment is string && data.comment.size() <= 1000;
+    }
+
+    // Collection matches
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Admin can create or delete any users. Users can change their own passwords.
+      allow create: if (isSignedIn() && isAdmin()) || userId == 'admin'; // Allow bootstrap
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['password', 'requiresPasswordChange'])) ||
+        isAdmin()
+      ) && isValidUser(incoming());
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    match /chalets/{chaletId} {
+      allow read: if true; // anyone can browse chalets
+      allow create: if isSignedIn() && (isAdmin() || (isOwner() && incoming().ownerId == request.auth.uid)) && isValidChalet(incoming());
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (isOwner() && existing().ownerId == request.auth.uid && incoming().ownerId == request.auth.uid)
+      ) && isValidChalet(incoming());
+      allow delete: if isSignedIn() && (isAdmin() || (isOwner() && existing().ownerId == request.auth.uid));
+    }
+
+    match /bookings/{bookingId} {
+      // Direct details are restricted to owner or admin. Sibling chalet link check.
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        (isOwner() && existing().ownerId == request.auth.uid) ||
+        (isOwner() && get(/databases/$(database)/documents/chalets/$(existing().chaletId)).data.ownerId == request.auth.uid)
+      );
+      // Anyone can submit a booking request
+      allow create: if isValidBooking(incoming());
+      // Only administrators or the assigned owner can approve/cancel
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (isOwner() && existing().ownerId == request.auth.uid)
+      ) && isValidBooking(incoming());
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true; // reviews are public
+      allow create: if isValidReview(incoming());
+      allow update: if isSignedIn() && isAdmin();
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    match /settings/{settingsId} {
+      allow read: if true; // public configurations
+      allow write: if isSignedIn() && isAdmin();
+    }
+  }
+}

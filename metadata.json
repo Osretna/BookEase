@@ -1,0 +1,6 @@
+{
+  "name": "Porto South Beach Bookings",
+  "description": "نظام بورتو ساوث بيتش السخنة لإدارة وحجز الشاليهات بالتكامل مع Firebase ودعم لوحة أصحاب الشاليهات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
