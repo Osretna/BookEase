@@ -154,11 +154,11 @@ export default function App() {
     const diffTime = Math.abs(new Date(bookingData.endDate).getTime() - new Date(bookingData.startDate).getTime());
     const daysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
     
-    // Check if the booking check-in date is within 48h to adjust pricing by +300 EGP as per user's urgent request instruction
-    const checkInDate = new Date(bookingData.startDate + "T00:00:00");
+    // Check if the booking check-in date is within 24h to adjust pricing by +300 EGP as per user's urgent request instruction
+    const checkInDate = new Date(bookingData.startDate + "T00:00:05");
     const todayNow = new Date();
     const diffTimeHrs = (checkInDate.getTime() - todayNow.getTime()) / (1000 * 60 * 60);
-    const isUrgent = diffTimeHrs <= 48;
+    const isUrgent = diffTimeHrs <= 24;
     const penaltyAddon = isUrgent ? 300 : 0;
 
     const getNightlyRate = (ownerId: string, startDateStr: string, terraceType: "ground" | "upper") => {
@@ -325,6 +325,15 @@ export default function App() {
     }
   };
 
+  // H2. Update custom seasonal pricing rule (By Owner)
+  const handleUpdatePriceRule = async (ruleId: string, updatedFields: Partial<PriceRule>) => {
+    try {
+      await updateDoc(doc(db, "priceRules", ruleId), updatedFields);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `priceRules/${ruleId}`);
+    }
+  };
+
   // F. Save Branding config (Admin only)
   const handleUpdateConfig = async (newConfig: SiteConfig) => {
     try {
@@ -354,10 +363,18 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-350 ${darkMode ? "dark bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-800"}`}>
+    <div className={`min-h-screen relative transition-colors duration-350 ${darkMode ? "dark bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-800"}`}>
+      
+      {/* Dynamic Watermark Background image for the whole site set by admin */}
+      {siteConfig.backgroundImageUrl && (
+        <div 
+          className="fixed inset-0 z-0 pointer-events-none opacity-[0.03] dark:opacity-[0.06] bg-cover bg-center bg-no-repeat bg-fixed transition-all duration-500"
+          style={{ backgroundImage: `url(${siteConfig.backgroundImageUrl})` }}
+        />
+      )}
       
       {/* Root wrapper adjusting layout dynamically for Arabic (RTL) or English (LTR) */}
-      <div dir={lang === "ar" ? "rtl" : "ltr"} className="font-sans antialiased">
+      <div dir={lang === "ar" ? "rtl" : "ltr"} className="relative z-10 font-sans antialiased">
         
         {/* Navigation Headbar */}
         <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-900 transition-all">
@@ -575,6 +592,7 @@ export default function App() {
               onUpdateBooking={handleUpdateBooking}
               onAddPriceRule={handleAddPriceRule}
               onDeletePriceRule={handleDeletePriceRule}
+              onUpdatePriceRule={handleUpdatePriceRule}
             />
           )}
 

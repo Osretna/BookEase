@@ -112,7 +112,7 @@ export default function CustomerView({
     const today = new Date();
     const diffTime = checkIn.getTime() - today.getTime();
     const diffHours = diffTime / (1000 * 60 * 60);
-    return diffHours <= 48;
+    return diffHours <= 24;
   };
 
   const t = translations[lang];
@@ -359,7 +359,16 @@ export default function CustomerView({
       ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتأكيده:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفترة المطلوبة: فترة من *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• عدد الليالي: *${getDurationDays(booking.startDate, booking.endDate)}* ليلة\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n💰 *تفاصيل التسعير والتحويل:*\n• إجمالي السعر المحسوب حسب فترتك المحددة: *${booking.totalPrice}* ج.م\n\nيرجى تأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس إلى حسابكم!`
       : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Complete parameters:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\n💰 *Pricing details:*\n• Total Calculated Price: *${booking.totalPrice}* EGP\n\nPlease respond to confirm my reservation and coordinate payment details!`;
 
-    const formattedPhone = targetPhone.replace(/[\s\+\-]/g, "");
+    let cleanPhone = targetPhone.replace(/[\s\+\-\(\)]/g, "");
+    if (cleanPhone.startsWith("00")) {
+      cleanPhone = cleanPhone.substring(2);
+    }
+    if (cleanPhone.startsWith("01") && cleanPhone.length === 11) {
+      cleanPhone = "20" + cleanPhone.substring(1);
+    } else if (cleanPhone.startsWith("1") && cleanPhone.length === 10) {
+      cleanPhone = "20" + cleanPhone;
+    }
+    const formattedPhone = cleanPhone;
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
     window.open(waUrl, "_blank");
   };
@@ -382,8 +391,17 @@ export default function CustomerView({
       ? `🚨 *طلب حجز شاليه مؤكد من موقع بورتو السخنة* 🏝️\n\nعزيزي الشريك المالك: *${ownerName}* 👨‍💼\nلقد قمت بحجز شاليهك عبر الموقع. إليك التفاصيل والبيانات المدخلة بالكامل:\n\n📂 *تفاصيل الشاليه والطلب:*\n• اسم الشاليه: *${booking.chaletName}*\n• سعر الليلة: *${ownerChalet?.pricePerNight || 0}* ج.م\n\n👤 *بيانات النزيل:*\n• الاسم الكامل: *${booking.customerName}*\n• رقم الهاتف: *${booking.customerPhone}*\n• الموقع الجغرافي: *${booking.customerLocation}*\n• تمنيات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n📆 *تواريخ الفترة والمدة:*\n• تاريخ الدخول: *${booking.startDate}*\n• تاريخ الخروج: *${booking.endDate}*\n• إجمالي مدة الإقامة: *${getDurationDays(booking.startDate, booking.endDate)}* ليالي\n\n💰 *الفواتير المالية وطريقة التحويل للمالك:*\n• السعر الإجمالي للفترة: *${booking.totalPrice}* ج.م${walletInfoAr}${instapayInfoAr}\n\nيرجى مراجعة الطلب وتأكيد الحجز لي وتحويل العربون لتأكيد حجز التواريخ!`
       : `🚨 *Confirmed Chalet Reservation - Porto South Sokhna* 🏝️\n\nDear Owner Partner: *${ownerName}* 👨‍💼\nI have requested to book your chalet on Sokhna Resort Portal. Complete logistics parameters:\n\n📂 *Chalet Details:*\n• Room Name: *${booking.chaletName}*\n• Rate per Night: *${ownerChalet?.pricePerNight || 0}* EGP\n\n👤 *Guest Information:*\n• Full Name: *${booking.customerName}*\n• Contact Phone: *${booking.customerPhone}*\n• GPS/Location: *${booking.customerLocation}*\n• Preferred Timing/Notes: *${booking.notes || "None"}*\n\n📆 *Dates & Duration:*\n• check-in: *${booking.startDate}*\n• check-out: *${booking.endDate}*\n• Stay Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n\n💰 *Total Invoice & Transfer:*\n• Grand Total: *${booking.totalPrice}* EGP${walletInfoEn}${instapayInfoEn}\n\nPlease review and confirm my reservation to solidify the hold!`;
 
-    // Clean phone of non-numeric characters for compatibility
-    const formattedPhone = ownerPhone.replace(/[\s\+\-]/g, "");
+    // Clean phone of non-numeric characters for compatibility and normalize with Egypt prefix (+20) if missing
+    let cleanPhone = ownerPhone.replace(/[\s\+\-\(\)]/g, "");
+    if (cleanPhone.startsWith("00")) {
+      cleanPhone = cleanPhone.substring(2);
+    }
+    if (cleanPhone.startsWith("01") && cleanPhone.length === 11) {
+      cleanPhone = "20" + cleanPhone.substring(1);
+    } else if (cleanPhone.startsWith("1") && cleanPhone.length === 10) {
+      cleanPhone = "20" + cleanPhone;
+    }
+    const formattedPhone = cleanPhone;
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
     window.open(waUrl, "_blank");
   };
@@ -882,13 +900,13 @@ export default function CustomerView({
                             {isUrgent && (
                               <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 p-3 rounded-xl flex flex-col gap-1 border border-amber-200/20 animate-fade-in">
                                 <div className="flex justify-between font-black text-[11px]">
-                                  <span>⚠️ {lang === "ar" ? "حجز عاجل (خلال أقل من 48 ساعة):" : "⚠️ Urgent Booking (< 48 hrs):"}</span>
+                                  <span>⚠️ {lang === "ar" ? "حجز عاجل (خلال أقل من 24 ساعة):" : "⚠️ Urgent Booking (< 24 hrs):"}</span>
                                   <span>+300 ج / ليلة</span>
                                 </div>
                                 <span className="text-[10px] text-amber-500/80">
                                   {lang === "ar" 
-                                    ? "نظراً لأن ميعاد حجزك يبدأ خلال أقل من 48 ساعة، يتم إضافة 300 جنيه تلقائياً كرسوم استعجال على الليلة!" 
-                                    : "Because your stay is within less than 48 hours, EGP 300 is precalculated and added per night."}
+                                    ? "نظراً لأن ميعاد حجزك يبدأ خلال أقل من 24 ساعة، يتم إضافة 300 جنيه تلقائياً كرسوم استعجال على الليلة!" 
+                                    : "Because your stay is within less than 24 hours, EGP 300 is precalculated and added per night."}
                                 </span>
                               </div>
                             )}

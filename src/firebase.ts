@@ -1,15 +1,16 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
+import { initializeFirestore, doc, getDocFromServer } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 // Initialize client-side Firebase
 const app = initializeApp(firebaseConfig);
 
 // CRITICAL: The applet requires configuring the specific Database ID from config if present
+// Force long polling to guarantee stable connectivity in restricted container/iframe environments
 export const db = firebaseConfig.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId) 
-  : getFirestore(app);
+  ? initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId) 
+  : initializeFirestore(app, { experimentalForceLongPolling: true });
 export const auth = getAuth(app);
 
 export enum OperationType {

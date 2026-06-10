@@ -129,8 +129,16 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
       ? `📋 *بيان استحقاق عمولة تطبيق شاليهات بورتو ساوث بيتش السخنة* 📋\n\nعزيزي الشريك المالك: *${row.username}*\nالفترة المحاسبية: *${monthLabel}*\n\n🌴 عدد الحجوزات المؤكدة لشاليهاتك: *${row.staysCount} حجز*\n💰 إجمالي بيوعات الدفع: *${row.revenue} ج.م*\n🎯 نسبة عمولة التطبيق المستحقة (5%): *${row.commission} ج.م*\n\nالرجاء تحويل مبلغ العمولة من خلال محفظة كاش المخصصة لإدارة البرنامج أو انستا باي لتثبيت وتأكيد استمرارية حسابك ونشاط شاليهاتك بالبرنامج.\nشكراً لتعاونكم المثمر دائماً! 🌴🏄‍♂️`
       : `📋 *Rental Billing Report - Porto South Beach App* 📋\n\nOwner Username: *${row.username}*\nBilling Period: *${monthLabel}*\n\n🌴 Confirmed stays: *${row.staysCount}*\n💰 Combined stay volume: *EGP ${row.revenue}*\n🎯 Application rental share (5%): *EGP ${row.commission}*\n\nPlease transfer this commission to preserve your listings' active activation inside Sokhna application.\nThank you for your active partnership! 🌴🏄‍♂️`;
 
-    const formattedPhone = row.phone.replace(/[\s\+\-]/g, "");
-    const finalPhone = formattedPhone.startsWith("01") ? `20${formattedPhone}` : formattedPhone;
+    let cleanPhone = row.phone.replace(/[\s\+\-\(\)]/g, "");
+    if (cleanPhone.startsWith("00")) {
+      cleanPhone = cleanPhone.substring(2);
+    }
+    if (cleanPhone.startsWith("01") && cleanPhone.length === 11) {
+      cleanPhone = "20" + cleanPhone.substring(1);
+    } else if (cleanPhone.startsWith("1") && cleanPhone.length === 10) {
+      cleanPhone = "20" + cleanPhone;
+    }
+    const finalPhone = cleanPhone;
     const url = `https://wa.me/${finalPhone}?text=${encodeURIComponent(textMsg)}`;
     window.open(url, "_blank");
   };

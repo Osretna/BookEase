@@ -4,7 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, 
+  initializeFirestore, 
   doc, 
   getDoc, 
   setDoc, 
@@ -33,9 +33,10 @@ async function startServer() {
 
   // Initialize Firebase server-side SDK
   const firebaseApp = initializeApp(firebaseConfig);
+  // Force long polling to guarantee stable connectivity in restricted container/iframe environments
   const db = firebaseConfig.firestoreDatabaseId
-    ? getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId)
-    : getFirestore(firebaseApp);
+    ? initializeFirestore(firebaseApp, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId)
+    : initializeFirestore(firebaseApp, { experimentalForceLongPolling: true });
 
   // Bootstrap Admin in Firestore on start (failsafe)
   try {

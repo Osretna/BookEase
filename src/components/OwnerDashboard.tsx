@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { 
   Building, Calendar, Plus, Save, Phone, MapPin, 
-  Trash2, DollarSign, Bed, Bath, Image as ImageIcon, MessageSquare, Check, X 
+  Trash2, Edit3, DollarSign, Bed, Bath, Image as ImageIcon, MessageSquare, Check, X 
 } from "lucide-react";
 import { Chalet, Booking, PriceRule } from "../types";
 import { translations } from "../translations";
@@ -21,6 +21,7 @@ interface OwnerDashboardProps {
   onUpdateBooking?: (bookingId: string, updatedFields: Partial<Booking>) => Promise<void>;
   onAddPriceRule?: (rule: Omit<PriceRule, "id">) => Promise<void>;
   onDeletePriceRule?: (ruleId: string) => Promise<void>;
+  onUpdatePriceRule?: (ruleId: string, updatedFields: Partial<PriceRule>) => Promise<void>;
 }
 
 export default function OwnerDashboard({
@@ -37,7 +38,8 @@ export default function OwnerDashboard({
   onUpdateBookingStatus,
   onUpdateBooking,
   onAddPriceRule,
-  onDeletePriceRule
+  onDeletePriceRule,
+  onUpdatePriceRule
 }: OwnerDashboardProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState("");
@@ -69,6 +71,7 @@ export default function OwnerDashboard({
   const [editWalletNumber, setEditWalletNumber] = useState("");
 
   // Seasonal price rules states
+  const [editingPriceRule, setEditingPriceRule] = useState<PriceRule | null>(null);
   const [startMonth, setStartMonth] = useState<number>(6); // Default June
   const [endMonth, setEndMonth] = useState<number>(8);     // Default August (Summer)
   const [groundPrice, setGroundPrice] = useState<string>("1500");
@@ -91,7 +94,6 @@ export default function OwnerDashboard({
 
   const handleCreatePriceRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onAddPriceRule) return;
     if (!groundPrice || !upperPrice) {
       alert(lang === "ar" ? "يرجى تحديد أسعار للمسطبتين!" : "Please specify prices for both levels!");
       return;
@@ -99,18 +101,32 @@ export default function OwnerDashboard({
 
     setLoading(true);
     try {
-      await onAddPriceRule({
-        ownerId: currentOwnerId,
-        ownerName: currentOwnerName,
-        startMonth,
-        endMonth,
-        groundPrice: Number(groundPrice),
-        upperPrice: Number(upperPrice),
-      });
-      // reset
-      setGroundPrice("1500");
-      setUpperPrice("1800");
-      alert(lang === "ar" ? "🎉 تم حفظ قاعدة التسعير للـفترة بنجاح!" : "🎉 Custom seasonal price rule added successfully!");
+      if (editingPriceRule) {
+        if (!onUpdatePriceRule) return;
+        await onUpdatePriceRule(editingPriceRule.id, {
+          startMonth,
+          endMonth,
+          groundPrice: Number(groundPrice),
+          upperPrice: Number(upperPrice),
+        });
+        setEditingPriceRule(null);
+        setGroundPrice("1500");
+        setUpperPrice("1800");
+        alert(lang === "ar" ? "🎉 تم تعديل قاعدة التسعير للفترة بنجاح!" : "🎉 Custom seasonal price rule updated successfully!");
+      } else {
+        if (!onAddPriceRule) return;
+        await onAddPriceRule({
+          ownerId: currentOwnerId,
+          ownerName: currentOwnerName,
+          startMonth,
+          endMonth,
+          groundPrice: Number(groundPrice),
+          upperPrice: Number(upperPrice),
+        });
+        setGroundPrice("1500");
+        setUpperPrice("1800");
+        alert(lang === "ar" ? "🎉 تم حفظ قاعدة التسعير للفترة بنجاح!" : "🎉 Custom seasonal price rule added successfully!");
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -464,7 +480,16 @@ export default function OwnerDashboard({
       ? `مرحباً ${booking.customerName}، يسعدنا إعلامك بأنه تم تأكيد حجزك لشاليه (${booking.chaletName}) في بورتو ساوث بيتش السخنة للفترة من ${booking.startDate} إلى ${booking.endDate}.\n\n💰 إجمالي المبلغ المطلوب: ${booking.totalPrice} جنية.\n${walletInfoAr}${instapayInfoAr}\n\nيرجى تحويل المبلغ وتأكيد الدفع للاستلام. نتمنى لك إقامة سعيدة! 🌴☀️`
       : `Dear ${booking.customerName}, we are pleased to confirm your booking for Chalet (${booking.chaletName}) at Porto South Beach Sokhna from ${booking.startDate} to ${booking.endDate}.\n\n💰 Total Price: EGP ${booking.totalPrice}.\n${walletInfoEn}${instapayInfoEn}\n\nPlease transfer style and confirm your payment. Have a great summer stay! 🌴☀️`;
     
-    const formattedPhone = booking.customerPhone.replace(/[\s\+\-]/g, "");
+    let cleanPhone = booking.customerPhone.replace(/[\s\+\-\(\)]/g, "");
+    if (cleanPhone.startsWith("00")) {
+      cleanPhone = cleanPhone.substring(2);
+    }
+    if (cleanPhone.startsWith("01") && cleanPhone.length === 11) {
+      cleanPhone = "20" + cleanPhone.substring(1);
+    } else if (cleanPhone.startsWith("1") && cleanPhone.length === 10) {
+      cleanPhone = "20" + cleanPhone;
+    }
+    const formattedPhone = cleanPhone;
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
     window.open(waUrl, "_blank");
   };
@@ -837,7 +862,9 @@ export default function OwnerDashboard({
           {/* LEFT COLUMN: Add New Rule Form */}
           <form onSubmit={handleCreatePriceRule} className="lg:col-span-1 bg-slate-50 dark:bg-slate-950/40 p-5 rounded-2xl border border-slate-205 dark:border-slate-800 space-y-4">
             <h4 className="text-xs font-black text-primary uppercase tracking-wider">
-              {lang === "ar" ? "➕ إضافة ميعاد وسعر مخصص للفترة" : "➕ Add Custom pricing rule"}
+              {editingPriceRule 
+                ? (lang === "ar" ? "✏️ تعديل ميعاد وسعر مخصص للفترة" : "✏️ Edit Custom pricing rule")
+                : (lang === "ar" ? "➕ إضافة ميعاد وسعر مخصص للفترة" : "➕ Add Custom pricing rule")}
             </h4>
 
             <div className="grid grid-cols-2 gap-2">
@@ -902,13 +929,31 @@ export default function OwnerDashboard({
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-primary hover:bg-[#ff7530] text-white font-extrabold py-2.5 rounded-xl text-xs transition shadow-sm cursor-pointer"
-            >
-              🚀 {lang === "ar" ? "حفظ قاعدة التسعير للفترة" : "Save Pricing Rule"}
-            </button>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-primary hover:bg-[#ff7530] text-white font-extrabold py-2.5 rounded-xl text-xs transition shadow-sm cursor-pointer animate-pulse-subtle"
+              >
+                {editingPriceRule 
+                  ? (lang === "ar" ? "💾 حفظ التعديلات" : "💾 Save Updates")
+                  : (lang === "ar" ? "🚀 حفظ قاعدة التسعير للفترة" : "Save Pricing Rule")}
+              </button>
+
+              {editingPriceRule && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPriceRule(null);
+                    setGroundPrice("1500");
+                    setUpperPrice("1800");
+                  }}
+                  className="w-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-350 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-extrabold py-2 rounded-xl text-xs transition shadow-sm cursor-pointer"
+                >
+                  ❌ {lang === "ar" ? "إلغاء التعديل" : "Cancel Edit"}
+                </button>
+              )}
+            </div>
           </form>
 
           {/* RIGHT COLUMN: Active Rules List */}
@@ -947,19 +992,43 @@ export default function OwnerDashboard({
                           </div>
                         </div>
 
-                        {onDeletePriceRule && (
+                        <div className="flex items-center gap-1.5">
                           <button
+                            type="button"
                             onClick={() => {
-                              if (confirm(lang === "ar" ? "هل أنت متأكد من حذف هذه القاعدة للتسعير؟" : "Are you sure you want to delete this pricing rule?")) {
-                                onDeletePriceRule(rule.id);
-                              }
+                              setEditingPriceRule(rule);
+                              setStartMonth(rule.startMonth);
+                              setEndMonth(rule.endMonth);
+                              setGroundPrice(String(rule.groundPrice));
+                              setUpperPrice(String(rule.upperPrice));
+                              window.scrollTo({ top: 300, behavior: "smooth" });
                             }}
-                            className="bg-red-50 hover:bg-red-105 text-red-500 dark:text-red-400 p-2 rounded-xl transition cursor-pointer"
-                            title={lang === "ar" ? "حذف قاعدة التسعير" : "Delete Pricing Rule"}
+                            className="bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 text-blue-500 dark:text-blue-400 p-2 rounded-xl transition cursor-pointer"
+                            title={lang === "ar" ? "تعديل قاعدة التسعير" : "Edit Pricing Rule"}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Edit3 className="w-4 h-4" />
                           </button>
-                        )}
+
+                          {onDeletePriceRule && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(lang === "ar" ? "هل أنت متأكد من حذف هذه القاعدة للتسعير؟" : "Are you sure you want to delete this pricing rule?")) {
+                                  onDeletePriceRule(rule.id);
+                                  if (editingPriceRule?.id === rule.id) {
+                                    setEditingPriceRule(null);
+                                    setGroundPrice("1500");
+                                    setUpperPrice("1800");
+                                  }
+                                }
+                              }}
+                              className="bg-red-50 dark:bg-red-950/30 hover:bg-red-100 text-red-500 dark:text-red-400 p-2 rounded-xl transition cursor-pointer"
+                              title={lang === "ar" ? "حذف قاعدة التسعير" : "Delete Pricing Rule"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })
