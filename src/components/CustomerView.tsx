@@ -4,7 +4,7 @@ import {
   Star, Send, Check, MessageSquare, AlertTriangle, Shield,
   ChevronLeft, ChevronRight, Copy
 } from "lucide-react";
-import { Chalet, Booking, Review, UserProfile } from "../types";
+import { Chalet, Booking, Review, UserProfile, PriceRule } from "../types";
 import { translations } from "../translations";
 
 interface CustomerViewProps {
@@ -13,6 +13,7 @@ interface CustomerViewProps {
   bookings: Booking[];
   reviews: Review[];
   owners?: UserProfile[];
+  priceRules?: PriceRule[];
   onAddBooking: (booking: Omit<Booking, "id" | "status" | "totalPrice">) => Promise<Booking | null>;
   onAddReview: (review: Omit<Review, "id" | "createdAt">) => Promise<void>;
 }
@@ -23,6 +24,7 @@ export default function CustomerView({
   bookings,
   reviews,
   owners,
+  priceRules = [],
   onAddBooking,
   onAddReview
 }: CustomerViewProps) {
@@ -66,7 +68,7 @@ export default function CustomerView({
   const [geoLocating, setGeoLocating] = useState(false);
 
   // Flexible stay form states
-  const [customerTab, setCustomerTab] = useState<"catalog" | "flexible">("catalog");
+  const [customerTab, setCustomerTab] = useState<"catalog" | "flexible">("flexible");
   const [flexName, setFlexName] = useState("");
   const [flexPhone, setFlexPhone] = useState("");
   const [flexLocation, setFlexLocation] = useState("");
@@ -76,6 +78,33 @@ export default function CustomerView({
   const [flexNotes, setFlexNotes] = useState("");
   const [flexError, setFlexError] = useState("");
   const [flexPlacedBooking, setFlexPlacedBooking] = useState<Booking | null>(null);
+
+  const getDynamicPriceRule = (ownerId: string, startDateStr: string) => {
+    if (!startDateStr || !priceRules || priceRules.length === 0) return null;
+    const date = new Date(startDateStr + "T00:00:00");
+    const checkInMonth = date.getMonth() + 1; // 1-12
+    
+    // Find a rule for this owner where the checkInMonth falls between startMonth and endMonth
+    const matchingRule = priceRules.find((rule) => {
+      if (rule.ownerId !== ownerId) return false;
+      const start = rule.startMonth;
+      const end = rule.endMonth;
+      if (start <= end) {
+        return checkInMonth >= start && checkInMonth <= end;
+      } else {
+        return checkInMonth >= start || checkInMonth <= end;
+      }
+    });
+    return matchingRule || null;
+  };
+
+  const getNightlyRate = (ownerId: string, startDateStr: string, terraceType: "ground" | "upper") => {
+    const activeRule = getDynamicPriceRule(ownerId, startDateStr);
+    if (activeRule) {
+      return terraceType === "ground" ? activeRule.groundPrice : activeRule.upperPrice;
+    }
+    return terraceType === "ground" ? 1500 : 1800;
+  };
 
   const checkIsUrgent = (dateStr: string) => {
     if (!dateStr) return false;
@@ -302,7 +331,7 @@ export default function CustomerView({
         isFlexible: true,
         terraceType: flexTerraceType,
         notes: flexNotes.trim(),
-        nightPrice: flexTerraceType === "ground" ? 1500 : 1800
+        nightPrice: getNightlyRate(selectedOwnerId, flexStartDate, flexTerraceType)
       } as any);
 
       if (response) {
@@ -327,8 +356,8 @@ export default function CustomerView({
     const urgentBonus = checkIsUrgent(booking.startDate) ? (lang === "ar" ? "\n⚠️ حجز عاجل (+300 ج لليلة مبرمجة تلقائياً)" : "\n⚠️ Urgent Booking (+300 EGP/night included)") : "";
     
     const text = lang === "ar"
-      ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتحديد السعر المناسب:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفئة المتوقع حجزها من فترة: *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\nيرجى تحديد السعر النهائي وتأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس!`
-      : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Please check and quote details:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\nPlease respond with your final quote and details so I can confirm and send payment!`;
+      ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتأكيده:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفترة المطلوبة: فترة من *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• عدد الليالي: *${getDurationDays(booking.startDate, booking.endDate)}* ليلة\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n💰 *تفاصيل التسعير والتحويل:*\n• إجمالي السعر المحسوب حسب فترتك المحددة: *${booking.totalPrice}* ج.م\n\nيرجى تأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس إلى حسابكم!`
+      : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Complete parameters:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\n💰 *Pricing details:*\n• Total Calculated Price: *${booking.totalPrice}* EGP\n\nPlease respond to confirm my reservation and coordinate payment details!`;
 
     const formattedPhone = targetPhone.replace(/[\s\+\-]/g, "");
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
@@ -364,45 +393,18 @@ export default function CustomerView({
       
       {/* Title block */}
       <div className="text-center space-y-3 max-w-2xl mx-auto animate-fade-in mb-8">
-        <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-          {t.exploreChalets}
+        <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent animate-fade-in">
+          {lang === "ar" ? "✨ نموذج حجز الإقامة المرنة وتحديد التوقيت" : "✨ Direct Flexible Stay Booking"}
         </h2>
         <div className="h-1 w-16 bg-primary mx-auto rounded-full"></div>
         <p className="text-slate-500 text-xs max-w-md mx-auto">
           {lang === "ar" 
-            ? "استمتع بصيف مميز في العين السخنة. تصفح الشاليهات والأسعار المباشرة واحجز فوراً باليوم" 
-            : "Live premium luxury at Porto South Beach Resort. Book direct stays instantly, fee-free"}
+            ? "احجز شاليهات بورتو ساوث بيتش السخنة مباشرة بأسعار الملاك وتجاوز العمولات. يرجى اختيار صاحب الشاليه وتاريخ الفترة بدقة!" 
+            : "Rent directly with Porto South Beach chalet owners at custom periodic rates to bypass fees. Select your preferred owner & dates!"}
         </p>
       </div>
 
-      {/* Dynamic Tab Selector for Stay Modes */}
-      <div className="flex justify-center mb-8">
-        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl flex gap-1 border border-slate-200/50 dark:border-slate-700/50 max-w-lg w-full shadow-sm">
-          <button
-            onClick={() => setCustomerTab("catalog")}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
-              customerTab === "catalog"
-                ? "bg-white dark:bg-slate-900 text-primary shadow-sm"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            🏡 {lang === "ar" ? "شاليهات بورتو المتوفرة" : "Available Listed Chalets"}
-          </button>
-          
-          <button
-            onClick={() => setCustomerTab("flexible")}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
-              customerTab === "flexible"
-                ? "bg-white dark:bg-slate-900 text-primary shadow-sm"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            ✨ {lang === "ar" ? "حجز مرن (بدون شاليه)" : "Flexible Stay (No fixed chalet)"}
-          </button>
-        </div>
-      </div>
-
-      {customerTab === "catalog" ? (
+      {customerTab === "catalog" && false ? (
         <div className="space-y-8 animate-fade-in">
           {/* CTA Banner */}
           <div className="bg-gradient-to-r from-amber-50 to-primary/10 dark:from-slate-800/50 dark:to-primary/20 p-6 rounded-3xl border border-primary/20 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm mb-2">
@@ -669,11 +671,10 @@ export default function CustomerView({
                 <button
                   onClick={() => {
                     setFlexPlacedBooking(null);
-                    setCustomerTab("catalog");
                   }}
                   className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3 px-6 rounded-xl text-xs transition"
                 >
-                  {lang === "ar" ? "⬅️ العودة لتصفح الشاليهات" : "⬅️ Back to Listings"}
+                  {lang === "ar" ? "🏡 حجز طلب إقامة جديد" : "🏡 Book Another Request"}
                 </button>
               </div>
             </div>
@@ -786,21 +787,45 @@ export default function CustomerView({
 
                   <div>
                     <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                      {lang === "ar" ? "🏡 نوع مسطبة الشاليه المطلوبة:" : "🏡 Terrace preference Level:"}
+                      👤 {lang === "ar" ? "صاحب الشاليه الذي ترغب في التعامل معه:" : "Chalet Owner you wish to book with:"} <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedOwnerId}
+                      onChange={(e) => setSelectedOwnerId(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:outline-none transition font-black text-primary"
+                    >
+                      <option value="all">🌐 {lang === "ar" ? "أي صاحب شاليه متوفر (حسب السعر العام)" : "Any Available Owner (General rate)"}</option>
+                      {combinedOwners.map((o) => (
+                        <option key={o.uid} value={o.uid}>
+                          👤 {o.username} {o.phone ? `(${o.phone})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                      🏡 {lang === "ar" ? "نوع مسطبة الشاليه المطلوبة:" : "Terrace preference Level:"}
                     </label>
                     <select
                       value={flexTerraceType}
                       onChange={(e) => setFlexTerraceType(e.target.value as any)}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:outline-none transition"
                     >
-                      <option value="ground">🏝️ {lang === "ar" ? "مسطبة أرضي (سعر تقديري: 1500 ج/ليلة)" : "Ground Terrace (Est: 1500 EGP/night)"}</option>
-                      <option value="upper">🌅 {lang === "ar" ? "مسطبة علوي (سعر تقديري: 1800 ج/ليلة)" : "Upper Terrace (Est: 1800 EGP/night)"}</option>
+                      <option value="ground">
+                        🏝️ {lang === "ar" ? "مسطبة أرضي" : "Ground Terrace"}{" "}
+                        ({lang === "ar" ? "سعر الليلة للفترة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "ground")} ج.م)
+                      </option>
+                      <option value="upper">
+                        🌅 {lang === "ar" ? "مسطبة علوي" : "Upper Terrace"}{" "}
+                        ({lang === "ar" ? "سعر الليلة للفترة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "upper")} ج.م)
+                      </option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                      {lang === "ar" ? "⏱️ التوقيت المفضل وتفاصيل أخرى:" : "⏱️ Preferred Timing & Notes:"}
+                      ⏱️ {lang === "ar" ? "التوقيت المفضل وتفاصيل أخرى:" : "Preferred Timing & Notes:"}
                     </label>
                     <textarea
                       value={flexNotes}
@@ -823,10 +848,11 @@ export default function CustomerView({
                       (() => {
                         const days = getDurationDays(flexStartDate, flexEndDate);
                         const isUrgent = checkIsUrgent(flexStartDate);
-                        const basePrice = flexTerraceType === "ground" ? 1500 : 1800;
+                        const basePrice = getNightlyRate(selectedOwnerId, flexStartDate, flexTerraceType);
                         const urgentAddon = isUrgent ? 300 : 0;
                         const finalRate = basePrice + urgentAddon;
                         const totalCost = days * finalRate;
+                        const activeRule = getDynamicPriceRule(selectedOwnerId, flexStartDate);
 
                         return (
                           <div className="space-y-3.5 text-xs text-slate-600 dark:text-slate-400">
@@ -838,6 +864,20 @@ export default function CustomerView({
                               <span>{lang === "ar" ? "🏡 سعر الليلة الأساسي:" : "🏡 Base rate/night:"}</span>
                               <span className="font-bold text-slate-800 dark:text-slate-200">{basePrice} {lang === "ar" ? "جنيه مصري" : "EGP"}</span>
                             </div>
+
+                            {activeRule && (
+                              <div className="bg-emerald-50 dark:bg-emerald-950/25 text-emerald-600 dark:text-emerald-400 p-3 rounded-xl flex flex-col gap-1 border border-emerald-250/20 text-[11px] font-black animate-fade-in text-right">
+                                <div className="flex justify-between">
+                                  <span>✨ {lang === "ar" ? "سعر المالك المخصص للفترة:" : "✨ Applied Owner Period Rate:"}</span>
+                                  <span>{lang === "ar" ? "نشط" : "Active"}</span>
+                                </div>
+                                <span className="text-[10px] text-emerald-500 font-medium">
+                                  {lang === "ar"
+                                    ? `تم استخدام السعر المبرمج بواسطة المالك لهذا الشهر (الفترة من شهر ${activeRule.startMonth} إلى شهر ${activeRule.endMonth}).`
+                                    : `Using seasonal pricing rules configured by the owner for this month range (from month ${activeRule.startMonth} to ${activeRule.endMonth}).`}
+                                </span>
+                              </div>
+                            )}
                             
                             {isUrgent && (
                               <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 p-3 rounded-xl flex flex-col gap-1 border border-amber-200/20 animate-fade-in">

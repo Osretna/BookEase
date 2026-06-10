@@ -3,7 +3,7 @@ import {
   Building, Calendar, Plus, Save, Phone, MapPin, 
   Trash2, DollarSign, Bed, Bath, Image as ImageIcon, MessageSquare, Check, X 
 } from "lucide-react";
-import { Chalet, Booking } from "../types";
+import { Chalet, Booking, PriceRule } from "../types";
 import { translations } from "../translations";
 
 interface OwnerDashboardProps {
@@ -13,11 +13,14 @@ interface OwnerDashboardProps {
   currentOwnerPhone: string;
   chalets: Chalet[];
   bookings: Booking[];
+  priceRules?: PriceRule[];
   onAddChalet: (chalet: Omit<Chalet, "id">) => Promise<void>;
   onDeleteChalet: (chaletId: string) => Promise<void>;
   onUpdateChalet: (chaletId: string, updatedFields: Partial<Chalet>) => Promise<void>;
   onUpdateBookingStatus: (bookingId: string, status: "confirmed" | "rejected") => Promise<void>;
   onUpdateBooking?: (bookingId: string, updatedFields: Partial<Booking>) => Promise<void>;
+  onAddPriceRule?: (rule: Omit<PriceRule, "id">) => Promise<void>;
+  onDeletePriceRule?: (ruleId: string) => Promise<void>;
 }
 
 export default function OwnerDashboard({
@@ -27,11 +30,14 @@ export default function OwnerDashboard({
   currentOwnerPhone,
   chalets,
   bookings,
+  priceRules = [],
   onAddChalet,
   onDeleteChalet,
   onUpdateChalet,
   onUpdateBookingStatus,
-  onUpdateBooking
+  onUpdateBooking,
+  onAddPriceRule,
+  onDeletePriceRule
 }: OwnerDashboardProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState("");
@@ -61,6 +67,56 @@ export default function OwnerDashboard({
   const [editImageLinks, setEditImageLinks] = useState<string[]>([""]);
   const [editInstapayAddress, setEditInstapayAddress] = useState("");
   const [editWalletNumber, setEditWalletNumber] = useState("");
+
+  // Seasonal price rules states
+  const [startMonth, setStartMonth] = useState<number>(6); // Default June
+  const [endMonth, setEndMonth] = useState<number>(8);     // Default August (Summer)
+  const [groundPrice, setGroundPrice] = useState<string>("1500");
+  const [upperPrice, setUpperPrice] = useState<string>("1800");
+
+  const monthsList = [
+    { value: 1, labelAr: "يناير (1)", labelEn: "January (1)" },
+    { value: 2, labelAr: "فبراير (2)", labelEn: "February (2)" },
+    { value: 3, labelAr: "مارس (3)", labelEn: "March (3)" },
+    { value: 4, labelAr: "أبريل (4)", labelEn: "April (4)" },
+    { value: 5, labelAr: "مايو (5)", labelEn: "May (5)" },
+    { value: 6, labelAr: "يونيو (6)", labelEn: "June (6)" },
+    { value: 7, labelAr: "يوليو (7)", labelEn: "July (7)" },
+    { value: 8, labelAr: "أغسطس (8)", labelEn: "August (8)" },
+    { value: 9, labelAr: "سبتمبر (9)", labelEn: "September (9)" },
+    { value: 10, labelAr: "أكتوبر (10)", labelEn: "October (10)" },
+    { value: 11, labelAr: "نوفمبر (11)", labelEn: "November (11)" },
+    { value: 12, labelAr: "ديسمبر (12)", labelEn: "December (12)" },
+  ];
+
+  const handleCreatePriceRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onAddPriceRule) return;
+    if (!groundPrice || !upperPrice) {
+      alert(lang === "ar" ? "يرجى تحديد أسعار للمسطبتين!" : "Please specify prices for both levels!");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onAddPriceRule({
+        ownerId: currentOwnerId,
+        ownerName: currentOwnerName,
+        startMonth,
+        endMonth,
+        groundPrice: Number(groundPrice),
+        upperPrice: Number(upperPrice),
+      });
+      // reset
+      setGroundPrice("1500");
+      setUpperPrice("1800");
+      alert(lang === "ar" ? "🎉 تم حفظ قاعدة التسعير للـفترة بنجاح!" : "🎉 Custom seasonal price rule added successfully!");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const t = translations[lang];
 
@@ -753,6 +809,163 @@ export default function OwnerDashboard({
               {lang === "ar" ? "لا توجد طلبات إقامة مرنة معلقة حالياً على بوابة المنتجع." : "No pending flexible Custom stays requests currently on the resort portal."}
             </p>
           )}
+        </div>
+      </div>
+
+      {/* SECTION: Monthly Custom Periodic Pricing Rules */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm animate-fade-in space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2 text-secondary dark:text-teal-400">
+            <DollarSign className="w-5 h-5 text-primary" />
+            <h3 className="font-extrabold text-sm sm:text-base">
+              {lang === "ar" ? "📅 إدارة أسعار الفترات المخصصة للـموقع (أرضي وعلوي)" : "📅 Manage Period Price Rules (Ground & Upper)"}
+            </h3>
+          </div>
+          <span className="text-xs text-slate-400 font-bold">
+            {lang === "ar" ? "قاعدة التسعير حسب تداخل الشهور" : "Monthly crossover based rates"}
+          </span>
+        </div>
+
+        {/* Explain */}
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-2xl">
+          {lang === "ar"
+            ? "💡 من هنا تستطيع إدخال الأسعار المخصصة لشاليهاتك الأرضي والعلوي لفترات شهور معينة، بدلاً من الأسعار التقريبية الافتراضية. عندما يحجز العميل في هذه الفترة، سيتم احتساب السعر الذي حددته تلقائياً بالكامل!"
+            : "💡 Here you can set customized prices for ground and upper chalets for certain month ranges instead of defaults. When a guest requests reservations during those dates, your rates will auto-calculate instantly!"}
+        </p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* LEFT COLUMN: Add New Rule Form */}
+          <form onSubmit={handleCreatePriceRule} className="lg:col-span-1 bg-slate-50 dark:bg-slate-950/40 p-5 rounded-2xl border border-slate-205 dark:border-slate-800 space-y-4">
+            <h4 className="text-xs font-black text-primary uppercase tracking-wider">
+              {lang === "ar" ? "➕ إضافة ميعاد وسعر مخصص للفترة" : "➕ Add Custom pricing rule"}
+            </h4>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 mb-1">{lang === "ar" ? "من شهر:" : "From Month:"}</label>
+                <select
+                  value={startMonth}
+                  onChange={(e) => setStartMonth(Number(e.target.value))}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {monthsList.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {lang === "ar" ? m.labelAr : m.labelEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 mb-1">{lang === "ar" ? "إلى شهر:" : "To Month:"}</label>
+                <select
+                  value={endMonth}
+                  onChange={(e) => setEndMonth(Number(e.target.value))}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {monthsList.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {lang === "ar" ? m.labelAr : m.labelEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                🏝️ {lang === "ar" ? "سعر الليلة للأرضي (جنيه مصري):" : "Ground Terrace Price (EGP):"}
+              </label>
+              <input
+                type="number"
+                required
+                min="100"
+                value={groundPrice}
+                onChange={(e) => setGroundPrice(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="1500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 mb-1">
+                🌅 {lang === "ar" ? "سعر الليلة للعلوي (جنيه مصري):" : "Upper Terrace Price (EGP):"}
+              </label>
+              <input
+                type="number"
+                required
+                min="100"
+                value={upperPrice}
+                onChange={(e) => setUpperPrice(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="1800"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-primary hover:bg-[#ff7530] text-white font-extrabold py-2.5 rounded-xl text-xs transition shadow-sm cursor-pointer"
+            >
+              🚀 {lang === "ar" ? "حفظ قاعدة التسعير للفترة" : "Save Pricing Rule"}
+            </button>
+          </form>
+
+          {/* RIGHT COLUMN: Active Rules List */}
+          <div className="lg:col-span-2 space-y-3">
+            <h4 className="text-xs font-black text-emerald-500 uppercase tracking-wider">
+              ✨ {lang === "ar" ? "القواعد النشطة المفعّلة لشاليهاتك" : "Your Active Custom Seasonal Rules"}
+            </h4>
+
+            <div className="space-y-2">
+              {priceRules.filter((r) => r.ownerId === currentOwnerId).length === 0 ? (
+                <div className="text-center py-12 text-slate-400 bg-slate-50 dark:bg-slate-950/20 border border-dashed border-slate-200 dark:border-slate-850 rounded-2xl text-xs">
+                  🌴 {lang === "ar" ? "لا توجد أسعار مخصصة مبرمجة حالياً. سيتم استخدام السعر العام الافتراضي (1500 أرضي / 1800 علوي)." : "No custom prices configured. The resort default rates are used (1500 Ground / 1800 Upper)."}
+                </div>
+              ) : (
+                priceRules
+                  .filter((r) => r.ownerId === currentOwnerId)
+                  .map((rule) => {
+                    const startLabel = monthsList.find((m) => m.value === rule.startMonth);
+                    const endLabel = monthsList.find((m) => m.value === rule.endMonth);
+                    return (
+                      <div
+                        key={rule.id}
+                        className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between hover:shadow-sm transition gap-4"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
+                              📅 {lang === "ar" 
+                                ? `الفترة من [${startLabel ? startLabel.labelAr : rule.startMonth}] إلى [${endLabel ? endLabel.labelAr : rule.endMonth}]` 
+                                : `Period from [${startLabel ? startLabel.labelEn : rule.startMonth}] to [${endLabel ? endLabel.labelEn : rule.endMonth}]`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-[11px] text-slate-500">
+                            <span>🏝️ {lang === "ar" ? "أرضي:" : "Ground:"} <strong className="text-primary">{rule.groundPrice} ج.م</strong></span>
+                            <span>🌅 {lang === "ar" ? "علوي:" : "Upper:"} <strong className="text-primary">{rule.upperPrice} ج.م</strong></span>
+                          </div>
+                        </div>
+
+                        {onDeletePriceRule && (
+                          <button
+                            onClick={() => {
+                              if (confirm(lang === "ar" ? "هل أنت متأكد من حذف هذه القاعدة للتسعير؟" : "Are you sure you want to delete this pricing rule?")) {
+                                onDeletePriceRule(rule.id);
+                              }
+                            }}
+                            className="bg-red-50 hover:bg-red-105 text-red-500 dark:text-red-400 p-2 rounded-xl transition cursor-pointer"
+                            title={lang === "ar" ? "حذف قاعدة التسعير" : "Delete Pricing Rule"}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, getDoc } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "./firebase";
-import { Chalet, Booking, Review, SiteConfig, UserProfile } from "./types";
+import { Chalet, Booking, Review, SiteConfig, UserProfile, PriceRule } from "./types";
 import { translations } from "./translations";
 
 // Sub-components
@@ -42,6 +42,7 @@ export default function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [owners, setOwners] = useState<UserProfile[]>([]);
+  const [priceRules, setPriceRules] = useState<PriceRule[]>([]);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>({
     id: "site-config",
     siteName: "بورتو ساوث بيتش السخنة 🏖️",
@@ -122,12 +123,24 @@ export default function App() {
       console.warn("Offline fallback, syncing owners skipped:", error);
     });
 
+    // 6. Sync Custom Pricing Rules defined by owners
+    const unsubscribePriceRules = onSnapshot(collection(db, "priceRules"), (snapshot) => {
+      const list: PriceRule[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as PriceRule);
+      });
+      setPriceRules(list);
+    }, (error) => {
+      console.error("Syncing priceRules failed:", error);
+    });
+
     return () => {
       unsubscribeChalets();
       unsubscribeBookings();
       unsubscribeReviews();
       unsubscribeSettings();
       unsubscribeOwners();
+      unsubscribePriceRules();
     };
   }, []);
 
@@ -148,11 +161,32 @@ export default function App() {
     const isUrgent = diffTimeHrs <= 48;
     const penaltyAddon = isUrgent ? 300 : 0;
 
+    const getNightlyRate = (ownerId: string, startDateStr: string, terraceType: "ground" | "upper") => {
+      if (!startDateStr || !priceRules || priceRules.length === 0) {
+        return terraceType === "ground" ? 1500 : 1800;
+      }
+      const date = new Date(startDateStr + "T00:00:00");
+      const checkInMonth = date.getMonth() + 1; // 1-12
+      const matchingRule = priceRules.find((rule) => {
+        if (rule.ownerId !== ownerId) return false;
+        const start = rule.startMonth;
+        const end = rule.endMonth;
+        if (start <= end) {
+          return checkInMonth >= start && checkInMonth <= end;
+        } else {
+          return checkInMonth >= start || checkInMonth <= end;
+        }
+      });
+      if (matchingRule) {
+        return terraceType === "ground" ? matchingRule.groundPrice : matchingRule.upperPrice;
+      }
+      return terraceType === "ground" ? 1500 : 1800;
+    };
+
     let calculatedPrice = 0;
     
     if (bookingData.chaletId === "flexible") {
-      // Base estimated rates for flexible bookings (Ground Terrace = 1500 / Upper Terrace = 1800 EGP)
-      const baseRate = bookingData.terraceType === "ground" ? 1500 : 1800;
+      const baseRate = getNightlyRate(bookingData.ownerId, bookingData.startDate, bookingData.terraceType || "ground");
       const finalNightPrice = baseRate + penaltyAddon;
       calculatedPrice = daysCount * finalNightPrice;
     } else {
@@ -264,6 +298,30 @@ export default function App() {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `bookings/${bookingId}`);
+    }
+  };
+
+  // G. Add custom seasonal pricing rule (By Owner)
+  const handleAddPriceRule = async (ruleData: Omit<PriceRule, "id" | "createdAt">) => {
+    const newId = "rule_" + Math.random().toString(36).substring(2, 15);
+    const fullRule: PriceRule = {
+      ...ruleData,
+      id: newId,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      await setDoc(doc(db, "priceRules", newId), fullRule);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `priceRules/${newId}`);
+    }
+  };
+
+  // H. Delete custom seasonal pricing rule (By Owner)
+  const handleDeletePriceRule = async (ruleId: string) => {
+    try {
+      await deleteDoc(doc(db, "priceRules", ruleId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `priceRules/${ruleId}`);
     }
   };
 
@@ -495,6 +553,7 @@ export default function App() {
               bookings={bookings}
               reviews={reviews}
               owners={owners}
+              priceRules={priceRules}
               onAddBooking={handleAddBooking}
               onAddReview={handleAddReview}
             />
@@ -508,11 +567,14 @@ export default function App() {
               currentOwnerPhone={currentUser.phone}
               chalets={chalets}
               bookings={bookings}
+              priceRules={priceRules}
               onAddChalet={handleAddChalet}
               onDeleteChalet={handleDeleteChalet}
               onUpdateChalet={handleUpdateChalet}
               onUpdateBookingStatus={handleUpdateBookingStatus}
               onUpdateBooking={handleUpdateBooking}
+              onAddPriceRule={handleAddPriceRule}
+              onDeletePriceRule={handleDeletePriceRule}
             />
           )}
 

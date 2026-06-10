@@ -82,6 +82,22 @@
         "lastUpdatedBy": { "type": "string", "description": "UID of the Admin who last saved configurations." }
       },
       "required": ["id", "siteName"]
+    },
+    "PriceRule": {
+      "title": "Price Rule",
+      "description": "Custom periodic pricing rules for Ground and Upper terrace chalets defined by their owner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique rule identifier." },
+        "ownerId": { "type": "string", "description": "The UID of the owner who created this rule." },
+        "ownerName": { "type": "string", "description": "The name of the owner." },
+        "startMonth": { "type": "number", "description": "Start month of the rule period (1-12)." },
+        "endMonth": { "type": "number", "description": "End month of the rule period (1-12)." },
+        "groundPrice": { "type": "number", "description": "Price/night for ground terrace chalets during this period." },
+        "upperPrice": { "type": "number", "description": "Price/night for upper terrace chalets during this period." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when this rule was configured." }
+      },
+      "required": ["id", "ownerId", "startMonth", "endMonth", "groundPrice", "upperPrice"]
     }
   },
   "firestore": {
@@ -104,6 +120,10 @@
     "/settings/{settingsId}": {
       "schema": "SiteConfig",
       "description": "Tracks layout properties, logo, and visual settings."
+    },
+    "/priceRules/{ruleId}": {
+      "schema": "PriceRule",
+      "description": "Custom periodic pricing rules created by chalet owners."
     }
   }
 }

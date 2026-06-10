@@ -60,3 +60,15 @@ export interface SiteConfig {
   logoUrl: string;
   backgroundImageUrl: string;
 }
+
+export interface PriceRule {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  startMonth: number; // 1-12
+  endMonth: number;   // 1-12
+  groundPrice: number;
+  upperPrice: number;
+  createdAt?: string;
+}
+
