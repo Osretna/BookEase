@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { UserProfile, SiteConfig, Booking, Chalet } from "../types";
 import { translations } from "../translations";
+import { db } from "../firebase";
 
 interface AdminDashboardProps {
   lang: "ar" | "en";
@@ -38,11 +39,35 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("/api/users");
-      const data = await res.json();
-      if (res.ok) {
-        setUsers(data.users || []);
+      let data;
+      try {
+        const res = await fetch("/api/users");
+        if (res.ok) {
+          data = await res.json();
+        } else {
+          throw new Error("Express service returned error status");
+        }
+      } catch (apiErr) {
+        console.warn("Express server unavailable. Getting users directly from client Firestore...", apiErr);
+        
+        const { collection, getDocs } = await import("firebase/firestore");
+        const usersRef = collection(db, "users");
+        const listSnapshot = await getDocs(usersRef);
+        const usersList = listSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            uid: doc.id,
+            username: data.username,
+            role: data.role,
+            phone: data.phone || "",
+            requiresPasswordChange: data.requiresPasswordChange || false,
+            createdAt: data.createdAt || ""
+          };
+        });
+        
+        data = { users: usersList };
       }
+      setUsers(data?.users || []);
     } catch (err) {
       console.error("Error loading users: ", err);
     }
@@ -123,16 +148,56 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
     setLoading(true);
 
     try {
-      const res = await fetch("/api/users/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, phone, role: "owner" })
-      });
+      let data;
+      try {
+        const res = await fetch("/api/users/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, phone, role: "owner" })
+        });
 
-      const data = await res.json();
+        const resData = await res.json();
+        if (res.ok) {
+          data = resData;
+        } else {
+          throw new Error(resData.error || "فشل إنشاء الحساب");
+        }
+      } catch (apiErr: any) {
+        console.warn("Express server unavailable. Creating user directly in client Firestore...", apiErr);
 
-      if (!res.ok) {
-        throw new Error(data.error || "فشل إنشاء الحساب");
+        const { collection, getDocs, query, where, doc, setDoc } = await import("firebase/firestore");
+
+        // Check if username already exists directly in Firestore
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("username", "==", username.trim()));
+        const existingUsers = await getDocs(q);
+
+        if (!existingUsers.empty) {
+          throw new Error(lang === "ar" ? "اسم المستخدم هذا مسجل بالفعل" : "This username is already registered");
+        }
+
+        const newUid = "owner_" + Math.random().toString(36).substring(2, 15);
+        const userDocRef = doc(db, "users", newUid);
+
+        await setDoc(userDocRef, {
+          uid: newUid,
+          username: username.trim(),
+          password: password,
+          phone: phone.trim(),
+          role: "owner",
+          requiresPasswordChange: true,
+          createdAt: new Date().toISOString()
+        });
+
+        data = {
+          success: true,
+          user: {
+            uid: newUid,
+            username: username.trim(),
+            phone: phone.trim(),
+            role: "owner"
+          }
+        };
       }
 
       setSuccess(t.createSuccess);
@@ -151,16 +216,29 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
     if (!window.confirm(lang === "ar" ? "هل أنت متأكد من حذف حساب هذا الشريك؟" : "Are you sure you want to delete this partner account?")) return;
 
     try {
-      const res = await fetch(`/api/users/${uid}`, {
-        method: "DELETE"
-      });
+      try {
+        const res = await fetch(`/api/users/${uid}`, {
+          method: "DELETE"
+        });
 
-      if (res.ok) {
+        if (res.ok) {
+          fetchUsers();
+          setSuccess(lang === "ar" ? "تم حذف الحساب بنجاح." : "Account deleted successfully.");
+        } else {
+          throw new Error("API delete returned failure status");
+        }
+      } catch (apiErr) {
+        console.warn("Express server unavailable. Deleting user directly from client Firestore...", apiErr);
+
+        const { doc, deleteDoc } = await import("firebase/firestore");
+        await deleteDoc(doc(db, "users", uid));
+        
         fetchUsers();
         setSuccess(lang === "ar" ? "تم حذف الحساب بنجاح." : "Account deleted successfully.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Delete user error: ", err);
+      setError(err.message || "حدث خطأ أثناء الحذف.");
     }
   };
 

@@ -4,7 +4,7 @@
   "apiKey": "AIzaSyDVqVhSo6fyUT9QNdTVYPu3cgIDMyggtQM",
   "authDomain": "porto-south-beach.firebaseapp.com",
   "databaseURL": "https://porto-south-beach-default-rtdb.firebaseio.com",
-  "firestoreDatabaseId": "",
+  "firestoreDatabaseId": "(default)",
   "storageBucket": "porto-south-beach.firebasestorage.app",
   "messagingSenderId": "462948835937",
   "measurementId": "G-9VNHRYNG86"
