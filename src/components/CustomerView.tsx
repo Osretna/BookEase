@@ -4,7 +4,7 @@ import {
   Star, Send, Check, MessageSquare, AlertTriangle, Shield,
   ChevronLeft, ChevronRight, Copy
 } from "lucide-react";
-import { Chalet, Booking, Review } from "../types";
+import { Chalet, Booking, Review, UserProfile } from "../types";
 import { translations } from "../translations";
 
 interface CustomerViewProps {
@@ -12,6 +12,7 @@ interface CustomerViewProps {
   chalets: Chalet[];
   bookings: Booking[];
   reviews: Review[];
+  owners?: UserProfile[];
   onAddBooking: (booking: Omit<Booking, "id" | "status" | "totalPrice">) => Promise<Booking | null>;
   onAddReview: (review: Omit<Review, "id" | "createdAt">) => Promise<void>;
 }
@@ -21,6 +22,7 @@ export default function CustomerView({
   chalets,
   bookings,
   reviews,
+  owners,
   onAddBooking,
   onAddReview
 }: CustomerViewProps) {
@@ -31,6 +33,26 @@ export default function CustomerView({
   const [customerLocation, setCustomerLocation] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [customerNotes, setCustomerNotes] = useState("");
+
+  // Owner filter configuration
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>("all");
+
+  const combinedOwners = React.useMemo(() => {
+    const map = new Map<string, { uid: string; username: string; phone: string }>();
+    if (owners) {
+      owners.forEach((u) => {
+        map.set(u.uid, { uid: u.uid, username: u.username, phone: u.phone || "" });
+      });
+    }
+    // Pull any additional active owners from local chalets listing to ensure complete sync
+    chalets.forEach((c) => {
+      if (c.ownerId && !map.has(c.ownerId)) {
+        map.set(c.ownerId, { uid: c.ownerId, username: c.ownerName, phone: c.phone || "" });
+      }
+    });
+    return Array.from(map.values());
+  }, [owners, chalets]);
   
   // Review form states
   const [reviewerName, setReviewerName] = useState("");
@@ -43,6 +65,27 @@ export default function CustomerView({
   const [loading, setLoading] = useState(false);
   const [geoLocating, setGeoLocating] = useState(false);
 
+  // Flexible stay form states
+  const [customerTab, setCustomerTab] = useState<"catalog" | "flexible">("catalog");
+  const [flexName, setFlexName] = useState("");
+  const [flexPhone, setFlexPhone] = useState("");
+  const [flexLocation, setFlexLocation] = useState("");
+  const [flexStartDate, setFlexStartDate] = useState("");
+  const [flexEndDate, setFlexEndDate] = useState("");
+  const [flexTerraceType, setFlexTerraceType] = useState<"ground" | "upper">("ground");
+  const [flexNotes, setFlexNotes] = useState("");
+  const [flexError, setFlexError] = useState("");
+  const [flexPlacedBooking, setFlexPlacedBooking] = useState<Booking | null>(null);
+
+  const checkIsUrgent = (dateStr: string) => {
+    if (!dateStr) return false;
+    const checkIn = new Date(dateStr + "T00:00:00");
+    const today = new Date();
+    const diffTime = checkIn.getTime() - today.getTime();
+    const diffHours = diffTime / (1000 * 60 * 60);
+    return diffHours <= 48;
+  };
+
   const t = translations[lang];
 
   // Auto detect location when user lands or switches language
@@ -52,8 +95,9 @@ export default function CustomerView({
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        // set temporary coords representation
-        setCustomerLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        const coordsText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        setCustomerLocation(coordsText);
+        setFlexLocation(coordsText);
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`, {
             headers: { 
@@ -65,15 +109,22 @@ export default function CustomerView({
             const data = await res.json();
             if (data && data.display_name) {
               setCustomerLocation(data.display_name);
+              setFlexLocation(data.display_name);
             } else {
-              setCustomerLocation(`https://www.google.com/maps?q=${latitude},${longitude}`);
+              const fallbackUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+              setCustomerLocation(fallbackUrl);
+              setFlexLocation(fallbackUrl);
             }
           } else {
-            setCustomerLocation(`https://www.google.com/maps?q=${latitude},${longitude}`);
+            const fallbackUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+            setCustomerLocation(fallbackUrl);
+            setFlexLocation(fallbackUrl);
           }
         } catch (err) {
           console.error("Reverse geocoding fail: ", err);
-          setCustomerLocation(`https://www.google.com/maps?q=${latitude},${longitude}`);
+          const fallbackUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+          setCustomerLocation(fallbackUrl);
+          setFlexLocation(fallbackUrl);
         } finally {
           setGeoLocating(false);
         }
@@ -131,6 +182,10 @@ export default function CustomerView({
     return days > 0 ? days : 0;
   };
 
+  const filteredChalets = selectedOwnerId === "all" 
+    ? chalets 
+    : chalets.filter(c => c.ownerId === selectedOwnerId);
+
   const handleBookSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -171,7 +226,8 @@ export default function CustomerView({
         customerPhone: customerPhone.trim(),
         customerLocation: formattedLocation,
         startDate,
-        endDate
+        endDate,
+        notes: customerNotes.trim()
       });
 
       if (response) {
@@ -182,6 +238,7 @@ export default function CustomerView({
         setCustomerLocation("");
         setStartDate("");
         setEndDate("");
+        setCustomerNotes("");
       }
     } catch (err: any) {
       setError(err.message || "حدث خطأ غير متوقع.");
@@ -210,20 +267,91 @@ export default function CustomerView({
     }
   };
 
+  const handleFlexSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFlexError("");
+
+    if (!flexName || !flexPhone || !flexStartDate || !flexEndDate) {
+      setFlexError(t.requiredFields);
+      return;
+    }
+
+    const cin = new Date(flexStartDate);
+    const cout = new Date(flexEndDate);
+    if (cout <= cin) {
+      setFlexError(lang === "ar" ? "تاريخ الخروج يجب أن يكون بعد تاريخ الدخول!" : "Checkout must be after Check-in!");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const formattedLocation = flexLocation.trim() || t.activeOffline;
+      const isUrgent = checkIsUrgent(flexStartDate);
+      
+      const response = await onAddBooking({
+        chaletId: "flexible",
+        chaletName: flexTerraceType === "ground" 
+          ? (lang === "ar" ? "طلب مرن: مسطبة أرضي 🏝️" : "Flexible: Ground Terrace Stay 🏝️") 
+          : (lang === "ar" ? "طلب مرن: مسطبة علوي 🌅" : "Flexible: Upper Terrace Stay 🌅"),
+        ownerId: selectedOwnerId,
+        customerName: flexName.trim(),
+        customerPhone: flexPhone.trim(),
+        customerLocation: formattedLocation,
+        startDate: flexStartDate,
+        endDate: flexEndDate,
+        isFlexible: true,
+        terraceType: flexTerraceType,
+        notes: flexNotes.trim(),
+        nightPrice: flexTerraceType === "ground" ? 1500 : 1800
+      } as any);
+
+      if (response) {
+        setFlexPlacedBooking(response);
+      }
+    } catch (err: any) {
+      setFlexError(err.message || "حدث خطأ أثناء معالجة الطلب.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFlexWhatsappRelay = (booking: Booking) => {
+    // Attempt to locate preferred owner's WhatsApp number, fallback to default admin
+    const ownerProfile = owners?.find(o => o.uid === booking.ownerId);
+    const targetPhone = ownerProfile?.phone || "+201021815155";
+    const targetName = ownerProfile?.username || (lang === "ar" ? "إدارة بورتو" : "Porto Admin");
+
+    const terraceLabel = booking.terraceType === "ground" 
+      ? (lang === "ar" ? "مسطبة أرضي 🏝️" : "Ground Terrace 🏝️") 
+      : (lang === "ar" ? "مسطبة علوي 🌅" : "Upper Terrace 🌅");
+    const urgentBonus = checkIsUrgent(booking.startDate) ? (lang === "ar" ? "\n⚠️ حجز عاجل (+300 ج لليلة مبرمجة تلقائياً)" : "\n⚠️ Urgent Booking (+300 EGP/night included)") : "";
+    
+    const text = lang === "ar"
+      ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتحديد السعر المناسب:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفئة المتوقع حجزها من فترة: *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\nيرجى تحديد السعر النهائي وتأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس!`
+      : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Please check and quote details:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\nPlease respond with your final quote and details so I can confirm and send payment!`;
+
+    const formattedPhone = targetPhone.replace(/[\s\+\-]/g, "");
+    const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank");
+  };
+
   // WhatsApp click-notification to the owner
   const handleWhatsappRelay = (booking: Booking) => {
     const ownerChalet = chalets.find(c => c.id === booking.chaletId);
-    const ownerPhone = ownerChalet?.phone || "+201000000000";
-
-    const walletInfoAr = ownerChalet?.walletNumber ? `\n📱 سأقوم بتحويل المبلغ لمحفظة كاش الخاصة بك: ${ownerChalet.walletNumber}` : "";
-    const instapayInfoAr = ownerChalet?.instapayAddress ? `\n⚡ أو الدفع عبر انستا باي (InstaPay IPN): ${ownerChalet.instapayAddress}` : "";
+    const ownerProfile = owners?.find(u => u.uid === booking.ownerId);
     
-    const walletInfoEn = ownerChalet?.walletNumber ? `\n📱 I will send funds to your Wallet Cash: ${ownerChalet.walletNumber}` : "";
-    const instapayInfoEn = ownerChalet?.instapayAddress ? `\n⚡ Or pay via InstaPay IPN: ${ownerChalet.instapayAddress}` : "";
+    const ownerPhone = ownerProfile?.phone || ownerChalet?.phone || "+201021815155";
+    const ownerName = ownerProfile?.username || ownerChalet?.ownerName || (lang === "ar" ? "مالك الشاليه" : "Owner");
+
+    const walletInfoAr = ownerChalet?.walletNumber ? `\n• 📱 رقم المحفظة (فودافون كاش): *${ownerChalet.walletNumber}*` : "";
+    const instapayInfoAr = ownerChalet?.instapayAddress ? `\n• ⚡ انستا باي (InstaPay IPN): *${ownerChalet.instapayAddress}*` : "";
+    
+    const walletInfoEn = ownerChalet?.walletNumber ? `\n• 📱 Cash Wallet (Vodafone Cash): *${ownerChalet.walletNumber}*` : "";
+    const instapayInfoEn = ownerChalet?.instapayAddress ? `\n• ⚡ InstaPay IPN: *${ownerChalet.instapayAddress}*` : "";
 
     const text = lang === "ar"
-      ? `مرحباً، لقد أرسلت طلب حجز شاليه (${booking.chaletName}) عبر الموقع لفترة: من ${booking.startDate} إلى ${booking.endDate}.\n💰 إجمالي السعر المتوقع: ${booking.totalPrice} جنية.\n${walletInfoAr}${instapayInfoAr}\n\nيرجى مراجعة وتأكيد الحجز لي! الاسم: ${booking.customerName}`
-      : `Hello, I just requested booking for Chalet (${booking.chaletName}) from ${booking.startDate} to ${booking.endDate} on Sokhna Portal.\n💰 Total price: EGP ${booking.totalPrice}.\n${walletInfoEn}${instapayInfoEn}\n\nPlease confirm my request! Customer: ${booking.customerName}`;
+      ? `🚨 *طلب حجز شاليه مؤكد من موقع بورتو السخنة* 🏝️\n\nعزيزي الشريك المالك: *${ownerName}* 👨‍💼\nلقد قمت بحجز شاليهك عبر الموقع. إليك التفاصيل والبيانات المدخلة بالكامل:\n\n📂 *تفاصيل الشاليه والطلب:*\n• اسم الشاليه: *${booking.chaletName}*\n• سعر الليلة: *${ownerChalet?.pricePerNight || 0}* ج.م\n\n👤 *بيانات النزيل:*\n• الاسم الكامل: *${booking.customerName}*\n• رقم الهاتف: *${booking.customerPhone}*\n• الموقع الجغرافي: *${booking.customerLocation}*\n• تمنيات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n📆 *تواريخ الفترة والمدة:*\n• تاريخ الدخول: *${booking.startDate}*\n• تاريخ الخروج: *${booking.endDate}*\n• إجمالي مدة الإقامة: *${getDurationDays(booking.startDate, booking.endDate)}* ليالي\n\n💰 *الفواتير المالية وطريقة التحويل للمالك:*\n• السعر الإجمالي للفترة: *${booking.totalPrice}* ج.م${walletInfoAr}${instapayInfoAr}\n\nيرجى مراجعة الطلب وتأكيد الحجز لي وتحويل العربون لتأكيد حجز التواريخ!`
+      : `🚨 *Confirmed Chalet Reservation - Porto South Sokhna* 🏝️\n\nDear Owner Partner: *${ownerName}* 👨‍💼\nI have requested to book your chalet on Sokhna Resort Portal. Complete logistics parameters:\n\n📂 *Chalet Details:*\n• Room Name: *${booking.chaletName}*\n• Rate per Night: *${ownerChalet?.pricePerNight || 0}* EGP\n\n👤 *Guest Information:*\n• Full Name: *${booking.customerName}*\n• Contact Phone: *${booking.customerPhone}*\n• GPS/Location: *${booking.customerLocation}*\n• Preferred Timing/Notes: *${booking.notes || "None"}*\n\n📆 *Dates & Duration:*\n• check-in: *${booking.startDate}*\n• check-out: *${booking.endDate}*\n• Stay Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n\n💰 *Total Invoice & Transfer:*\n• Grand Total: *${booking.totalPrice}* EGP${walletInfoEn}${instapayInfoEn}\n\nPlease review and confirm my reservation to solidify the hold!`;
 
     // Clean phone of non-numeric characters for compatibility
     const formattedPhone = ownerPhone.replace(/[\s\+\-]/g, "");
@@ -247,96 +375,522 @@ export default function CustomerView({
         </p>
       </div>
 
-      {/* Main chalets grid list */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {chalets.map((chalet) => {
-          const ratingScore = getChaletRating(chalet.id);
-          const reviewCount = getChaletReviewCount(chalet.id);
+      {/* Dynamic Tab Selector for Stay Modes */}
+      <div className="flex justify-center mb-8">
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl flex gap-1 border border-slate-200/50 dark:border-slate-700/50 max-w-lg w-full shadow-sm">
+          <button
+            onClick={() => setCustomerTab("catalog")}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
+              customerTab === "catalog"
+                ? "bg-white dark:bg-slate-900 text-primary shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            🏡 {lang === "ar" ? "شاليهات بورتو المتوفرة" : "Available Listed Chalets"}
+          </button>
+          
+          <button
+            onClick={() => setCustomerTab("flexible")}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
+              customerTab === "flexible"
+                ? "bg-white dark:bg-slate-900 text-primary shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            ✨ {lang === "ar" ? "حجز مرن (بدون شاليه)" : "Flexible Stay (No fixed chalet)"}
+          </button>
+        </div>
+      </div>
 
-          return (
-            <div key={chalet.id} className="group bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-3xl overflow-hidden hover:shadow-xl transition-all duration-300 flex flex-col justify-between shadow-sm">
-              
-              {/* Image banner */}
-              <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
-                <img
-                  src={chalet.images[0]}
-                  alt={chalet.name}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=800&fit=crop";
-                  }}
-                />
-                
-                {/* Floating tags */}
-                <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-950 font-black text-xs px-3 py-1.5 rounded-full shadow-md flex items-center gap-1">
-                  <DollarSign className="w-3 text-primary" />
-                  <span>{chalet.pricePerNight} {t.egpDay}</span>
-                </div>
+      {customerTab === "catalog" ? (
+        <div className="space-y-8 animate-fade-in">
+          {/* CTA Banner */}
+          <div className="bg-gradient-to-r from-amber-50 to-primary/10 dark:from-slate-800/50 dark:to-primary/20 p-6 rounded-3xl border border-primary/20 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm mb-2">
+            <div className="space-y-1 text-center md:text-right rtl:md:text-right ltr:md:text-left">
+              <span className="inline-flex bg-primary/25 text-primary text-[10px] px-2.5 py-1 rounded-full font-black uppercase">
+                {lang === "ar" ? "ميزة جديدة 🤩" : "New Feature 🤩"}
+              </span>
+              <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                {lang === "ar" ? "هل تبحث عن حجز تواريخ معينة مباشرة بدون شاليه محدد؟" : "Looking for custom dates directly without a specific room?"}
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {lang === "ar" ? "حدد تواريخك ونوع المسطبة لتسجيل طلبك فوراً بالجنيه المصري وسيقوم الملاك بتسعيره وتأكيده لك!" : "Choose dates & terrace preference to instantly record stays in EGP. Our owners will quote you dynamically!"}
+              </p>
+            </div>
+            <button
+              onClick={() => setCustomerTab("flexible")}
+              className="bg-primary hover:bg-primary/95 text-white font-black text-xs px-5 py-3 rounded-xl transition shadow-md whitespace-nowrap"
+            >
+              🚀 {lang === "ar" ? "جرب الحجز المرن الآن" : "Try Flexible Reservation"}
+            </button>
+          </div>
 
-                <div className="absolute bottom-3 left-3 bg-slate-950/70 backdrop-blur-md text-white font-semibold text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                  <span>{ratingScore} ({reviewCount})</span>
-                </div>
-              </div>
-
-              {/* Specs body */}
-              <div className="p-6 space-y-3 flex-grow">
-                <h3 className="font-extrabold text-lg text-clean-dark dark:text-slate-100 group-hover:text-primary transition truncate">
-                  {chalet.name}
+          {/* Owner Selector Board (تصفية الشاليهات حسب اختيار اسم صاحب الشاليه) */}
+          <div className="bg-slate-50/80 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-2 border-b border-dashed border-slate-200/60 dark:border-slate-800">
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-clean-dark dark:text-slate-100 flex items-center gap-2">
+                  <span>👨‍💼</span>
+                  {lang === "ar" ? "اختر اسم صاحب الشاليه الذي تتعامل معه:" : "Select your chalet owner/partner:"}
                 </h3>
-                
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 min-h-12">
-                  {chalet.description}
+                <p className="text-[11px] text-slate-400 dark:text-slate-400">
+                  {lang === "ar" 
+                    ? "اضغط على اسم المالك لعرض شاليهاته المتوفرة مباشرة وحجزها، أو جرب تصفح ملاك آخرين!" 
+                    : "Filter listings by choosing your preferred business owner, or explore others to try new experiences!"}
                 </p>
+              </div>
+              
+              {selectedOwnerId !== "all" && (
+                <button
+                  onClick={() => setSelectedOwnerId("all")}
+                  className="text-xs font-bold text-primary hover:underline self-start"
+                >
+                  {lang === "ar" ? "🔄 عرض كافة ملاك الشاليهات" : "🔄 Show All Owners"}
+                </button>
+              )}
+            </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <Bed className="w-4 h-4 text-primary" />
-                    <span>{chalet.roomsCount} {t.rooms}</span>
+            {/* Scrolling List of Owners */}
+            <div className="flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin scrollbar-thumb-orange-100">
+              {/* All Owners Option */}
+              <button
+                type="button"
+                onClick={() => setSelectedOwnerId("all")}
+                className={`relative flex items-center gap-3 p-3 rounded-2xl border transition shrink-0 text-right ${
+                  selectedOwnerId === "all"
+                    ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+                    : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                }`}
+              >
+                <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+                  🏝️
+                </div>
+                <div className="text-left rtl:text-right">
+                  <span className="block text-xs font-black text-slate-800 dark:text-slate-250">
+                    {lang === "ar" ? "جميع ملاك الشاليهات" : "All Resort Owners"}
+                  </span>
+                  <span className="block text-[10px] text-slate-400">
+                    {chalets.length} {lang === "ar" ? "شاليه معروض" : "Total Chalets"}
+                  </span>
+                </div>
+              </button>
+
+              {/* Owner profile chips */}
+              {combinedOwners.map((owner) => {
+                const ownerChaletsCount = chalets.filter(c => c.ownerId === owner.uid).length;
+                const isSelected = selectedOwnerId === owner.uid;
+                
+                return (
+                  <button
+                    type="button"
+                    key={owner.uid}
+                    onClick={() => setSelectedOwnerId(owner.uid)}
+                    className={`relative flex items-center gap-3 p-3 rounded-2xl border transition shrink-0 text-right ${
+                      isSelected
+                        ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+                        : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-extrabold text-xs border border-slate-300/10">
+                      👤
+                    </div>
+                    <div className="text-left rtl:text-right">
+                      <span className="block text-xs font-black text-slate-805 dark:text-slate-100">
+                        {owner.username}
+                      </span>
+                      <span className="block text-[10px] text-slate-400">
+                        {ownerChaletsCount} {lang === "ar" ? "شاليه متوفر" : "Chalets listed"}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredChalets.map((chalet) => {
+              const ratingScore = getChaletRating(chalet.id);
+              const reviewCount = getChaletReviewCount(chalet.id);
+
+              return (
+                <div key={chalet.id} className="group bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-3xl overflow-hidden hover:shadow-xl transition-all duration-300 flex flex-col justify-between shadow-sm">
+                  
+                  {/* Image banner */}
+                  <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
+                    <img
+                      src={chalet.images[0]}
+                      alt={chalet.name}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=800&fit=crop";
+                      }}
+                    />
+                    
+                    {/* Floating tags */}
+                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-950 font-black text-xs px-3 py-1.5 rounded-full shadow-md flex items-center gap-1">
+                      <DollarSign className="w-3 text-primary" />
+                      <span>{chalet.pricePerNight} {t.egpDay}</span>
+                    </div>
+
+                    <div className="absolute bottom-3 left-3 bg-slate-950/70 backdrop-blur-md text-white font-semibold text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                      <span>{ratingScore} ({reviewCount})</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Bath className="w-4 h-4 text-primary" />
-                    <span>{chalet.bathroomsCount} {t.bathrooms}</span>
+
+                  {/* Specs body */}
+                  <div className="p-6 space-y-3 flex-grow">
+                    <h3 className="font-extrabold text-lg text-clean-dark dark:text-slate-100 group-hover:text-primary transition truncate">
+                      {chalet.name}
+                    </h3>
+                    
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 min-h-12">
+                      {chalet.description}
+                    </p>
+
+                    <div className="flex justify-between items-center pt-3 border-t border-gray-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Bed className="w-4 h-4 text-primary" />
+                        <span>{chalet.roomsCount} {t.rooms}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Bath className="w-4 h-4 text-primary" />
+                        <span>{chalet.bathroomsCount} {t.bathrooms}</span>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Action and detail trigger footer */}
+                  <div className="p-6 bg-slate-50/30 dark:bg-slate-800/20 border-t border-gray-100 dark:border-slate-800 flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedChalet(chalet);
+                        setActiveImageIndex(0);
+                        setPlacedBooking(null);
+                        setError("");
+                      }}
+                      className="flex-1 bg-primary hover:bg-[#ff7530] text-white font-bold py-2.5 px-4 rounded-xl text-xs transition shadow-md shadow-orange-100 dark:shadow-none"
+                    >
+                      {t.bookNow}
+                    </button>
+
+                    <a
+                      href={chalet.locationLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl bg-white dark:bg-slate-900 transition flex items-center justify-center shrink-0"
+                      title={t.viewLocation}
+                    >
+                      <MapPin className="w-4 h-4 text-secondary" />
+                    </a>
+                  </div>
+
+                </div>
+              );
+            })}
+
+            {filteredChalets.length === 0 && (
+              <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-200/60 dark:border-slate-800 rounded-3xl p-8 bg-slate-50/50 dark:bg-slate-900/30 flex flex-col items-center justify-center space-y-4">
+                <span className="text-3xl">🏜️</span>
+                <p className="text-slate-500 text-xs leading-relaxed max-w-sm mx-auto">
+                  {lang === "ar" 
+                    ? "هذا المالك ليس لديه شاليهات مدرجة حالياً في المنتجع. يمكنك اختيار ملاك آخرين لتجربتهم أو تقديم طلب حجز مرن وسيتواصل هذا المالك معك مباشرةً للتنسيق!" 
+                    : "This owner has no chalets listed currently. You can try other owners or submit a flexible stay request for this partner to contact you!"}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedOwnerId("all")}
+                    className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] px-4 py-2 rounded-xl transition"
+                  >
+                    🔄 {lang === "ar" ? "تصفح كل الملاك" : "Browse All Owners"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCustomerTab("flexible");
+                    }}
+                    className="bg-primary hover:bg-[#ff7530] text-white font-extrabold text-[11px] px-4 py-2 rounded-xl transition shadow-sm"
+                  >
+                    ✨ {lang === "ar" ? "طلب حجز مرن مع المالك" : "Request Flexible Stay"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* FLEXIBLE BOOKING PANEL DISPLAY */
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl max-w-4xl mx-auto animate-fade-in text-clean-dark dark:text-slate-100">
+          {flexPlacedBooking ? (
+            /* Booking successful state card */
+            <div className="p-4 sm:p-8 text-center space-y-6 max-w-xl mx-auto animate-fade-in">
+              <div className="w-20 h-20 bg-teal-50 dark:bg-teal-950/40 rounded-full flex items-center justify-center mx-auto text-teal-500 animate-bounce">
+                <Check className="w-10 h-10 stroke-[3]" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-teal-600 dark:text-teal-400">
+                  {lang === "ar" ? "تم تسجيل طلبك المرن بنجاح! 🎉" : "Your flexible stay request is submitted! 🎉"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {lang === "ar" 
+                    ? "لقد قمنا بحفظ طلب حجزك المباشر في قاعدة البيانات بنجاح بالجنيه المصري. سيقوم المالك بمراجعة طلبك وإدخال قيمة الحجز المخصصة لك لتأكيدها. يرجى الضغط على زر الواتس اب بالأسفل لإرسال بيانات حجزك المنسقة للمسؤول للتسريع الفوري والدائم!"
+                    : "We recorded your custom reservation request in our centralized database in Egyptian Pounds. The owner/operator will review and file custom prices for the check-in period. To guarantee immediate delivery, tap the WhatsApp button below to relay your logistics details!"}
+                </p>
+              </div>
+
+              {/* Placed booking stats breakdown */}
+              <div className="bg-slate-50 dark:bg-slate-950/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-2 text-right rtl:text-right ltr:text-left text-xs text-slate-600 dark:text-slate-400">
+                <div>
+                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "👤 صاحب الـطلب:" : "👤 Client Name:"}</strong> {flexPlacedBooking.customerName}
+                </div>
+                <div>
+                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "🏡 نوع المسطبة:" : "🏡 Terrace Preference:"}</strong> {flexPlacedBooking.terraceType === "ground" ? (lang === "ar" ? "مسطبة أرضي 🏝️" : "Ground Terrace 🏝️") : (lang === "ar" ? "مسطبة علوي 🌅" : "Upper Terrace 🌅")}
+                </div>
+                <div>
+                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "📆 التوقيت المفضل والمواعيد:" : "📆 Booking Period & Timing:"}</strong> {flexPlacedBooking.startDate} {lang === "ar" ? "إلى" : "to"} {flexPlacedBooking.endDate} ({flexPlacedBooking.notes || "لا توجد تفاصيل توقيت"})
+                </div>
+                <div>
+                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "💰 حساب ليلة تقديري:" : "💰 Night Price Estimate:"}</strong> {flexPlacedBooking.totalPrice / (Math.ceil(Math.abs(new Date(flexPlacedBooking.endDate).getTime() - new Date(flexPlacedBooking.startDate).getTime()) / (1000 * 60 * 60 * 24)) || 1)} {lang === "ar" ? "جنيهاً مصرياً" : "EGP"}
+                </div>
+                <div>
+                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "💵 الإجمالي التقديري للفترة:" : "💵 Total Estimated Cost:"}</strong> <span className="text-primary font-bold">{flexPlacedBooking.totalPrice} {lang === "ar" ? "جنيه مصري" : "EGP"}</span>
                 </div>
               </div>
 
-              {/* Action and detail trigger footer */}
-              <div className="p-6 bg-slate-50/30 dark:bg-slate-800/20 border-t border-gray-100 dark:border-slate-800 flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+                <button
+                  onClick={() => handleFlexWhatsappRelay(flexPlacedBooking)}
+                  className="bg-[#25D366] hover:bg-[#20ba59] active:scale-95 transition text-white font-extrabold py-3 px-6 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-green-100 dark:shadow-none"
+                >
+                  <MessageSquare className="w-4 h-4 fill-white" />
+                  {lang === "ar" ? "💬 تفعيل وتأكيد الحجز فوراً عبر الواتساب" : "💬 Secure instantly on WhatsApp"}
+                </button>
                 <button
                   onClick={() => {
-                    setSelectedChalet(chalet);
-                    setActiveImageIndex(0);
-                    setPlacedBooking(null);
-                    setError("");
+                    setFlexPlacedBooking(null);
+                    setCustomerTab("catalog");
                   }}
-                  className="flex-1 bg-primary hover:bg-[#ff7530] text-white font-bold py-2.5 px-4 rounded-xl text-xs transition shadow-md shadow-orange-100 dark:shadow-none"
+                  className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3 px-6 rounded-xl text-xs transition"
                 >
-                  {t.bookNow}
+                  {lang === "ar" ? "⬅️ العودة لتصفح الشاليهات" : "⬅️ Back to Listings"}
                 </button>
-
-                <a
-                  href={chalet.locationLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl bg-white dark:bg-slate-900 transition flex items-center justify-center shrink-0"
-                  title={t.viewLocation}
-                >
-                  <MapPin className="w-4 h-4 text-secondary" />
-                </a>
+              </div>
+            </div>
+          ) : (
+            /* Flexible booking custom interactive registration form */
+            <form onSubmit={handleFlexSubmit} className="space-y-6">
+              <div className="border-b border-gray-100 dark:border-slate-800 pb-4">
+                <h3 className="text-xl font-black text-primary">
+                  {lang === "ar" ? "✨ نموذج حجز الإقامة المرنة وتحديد التوقيت" : "✨ Custom Flexible Stay Reservation Form"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {lang === "ar" 
+                    ? "نموذج لتحديد تواريخك ونوع المسطبة لتخصيص طلب إقامة في السخنة بورتو بدون الرجوع لشاليه معين، وسيقوم الملاك بالتسعير الفوري بالجنيه المصري!" 
+                    : "Specify your dates, terrace level, preferred timing, and our Porto Sokhna owners will quote you dynamically!"}
+                </p>
               </div>
 
-            </div>
-          );
-        })}
+              {flexError && (
+                <div className="bg-red-50 dark:bg-red-950/30 text-red-500 p-3.5 rounded-xl text-xs border border-red-100 dark:border-red-950 font-bold animate-shake">
+                  ⚠️ {flexError}
+                </div>
+              )}
 
-        {chalets.length === 0 && (
-          <div className="col-span-full py-16 text-center text-slate-400">
-            {t.emptyChalets}
-          </div>
-        )}
-      </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Form fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {t.customerName} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={flexName}
+                      onChange={(e) => setFlexName(e.target.value)}
+                      placeholder={lang === "ar" ? "مثال: أحمد محمد علي" : "e.g., John Doe"}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition animate-fade-in"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {t.customerPhone} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={flexPhone}
+                      onChange={(e) => setFlexPhone(e.target.value)}
+                      placeholder={lang === "ar" ? "مثال: 01012345678" : "e.g., +2010000000"}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition ltr:block"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {t.customerLocation}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={flexLocation}
+                        onChange={(e) => setFlexLocation(e.target.value)}
+                        placeholder={t.loadingLocation}
+                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={autoGetLocation}
+                        disabled={geoLocating}
+                        className="px-3 bg-secondary text-white rounded-xl hover:bg-secondary/90 transition text-xs font-bold shrink-0 flex items-center justify-center min-w-[44px]"
+                        title={t.autoLocationTip}
+                      >
+                        📍 {geoLocating ? "..." : ""}
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      {lang === "ar" ? "🔑 يتم سحب موقعك الجغرافي الدقيق تلقائياً لسهولة المعالجة" : "🔑 Automatically detects exact GPS location for ease"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                        {t.startDate} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        min={new Date().toISOString().split("T")[0]}
+                        value={flexStartDate}
+                        onChange={(e) => setFlexStartDate(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                        {t.endDate} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        min={flexStartDate || new Date().toISOString().split("T")[0]}
+                        value={flexEndDate}
+                        onChange={(e) => setFlexEndDate(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {lang === "ar" ? "🏡 نوع مسطبة الشاليه المطلوبة:" : "🏡 Terrace preference Level:"}
+                    </label>
+                    <select
+                      value={flexTerraceType}
+                      onChange={(e) => setFlexTerraceType(e.target.value as any)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:outline-none transition"
+                    >
+                      <option value="ground">🏝️ {lang === "ar" ? "مسطبة أرضي (سعر تقديري: 1500 ج/ليلة)" : "Ground Terrace (Est: 1500 EGP/night)"}</option>
+                      <option value="upper">🌅 {lang === "ar" ? "مسطبة علوي (سعر تقديري: 1800 ج/ليلة)" : "Upper Terrace (Est: 1800 EGP/night)"}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {lang === "ar" ? "⏱️ التوقيت المفضل وتفاصيل أخرى:" : "⏱️ Preferred Timing & Notes:"}
+                    </label>
+                    <textarea
+                      value={flexNotes}
+                      onChange={(e) => setFlexNotes(e.target.value)}
+                      placeholder={lang === "ar" ? "مثال: حجز دخول باكر الساعة 10 صباحاً، شاليه هادئ، طابق أرضي مفضل" : "e.g. early check-in at 10 AM, clean room, baby bed preferred"}
+                      rows={3}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition"
+                    />
+                  </div>
+                </div>
+
+                {/* Live Dynamic Pricing Display & Guarantee section */}
+                <div className="bg-slate-50 dark:bg-slate-950/40 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 flex flex-col justify-between space-y-6">
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-extrabold text-clean-dark dark:text-slate-100 border-b border-slate-200/50 dark:border-slate-800 pb-2">
+                      💰 {lang === "ar" ? "تفاصيل التسعير والشفافية بالجنيه المصري" : "Pricing Details & Transparency in EGP"}
+                    </h4>
+                    
+                    {flexStartDate && flexEndDate ? (
+                      (() => {
+                        const days = getDurationDays(flexStartDate, flexEndDate);
+                        const isUrgent = checkIsUrgent(flexStartDate);
+                        const basePrice = flexTerraceType === "ground" ? 1500 : 1800;
+                        const urgentAddon = isUrgent ? 300 : 0;
+                        const finalRate = basePrice + urgentAddon;
+                        const totalCost = days * finalRate;
+
+                        return (
+                          <div className="space-y-3.5 text-xs text-slate-600 dark:text-slate-400">
+                            <div className="flex justify-between">
+                              <span>{lang === "ar" ? "📆 عدد الليالي:" : "📆 Duration:"}</span>
+                              <span className="font-extrabold text-slate-800 dark:text-slate-200">{days} {lang === "ar" ? "ليلية" : "nights"}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>{lang === "ar" ? "🏡 سعر الليلة الأساسي:" : "🏡 Base rate/night:"}</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{basePrice} {lang === "ar" ? "جنيه مصري" : "EGP"}</span>
+                            </div>
+                            
+                            {isUrgent && (
+                              <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 p-3 rounded-xl flex flex-col gap-1 border border-amber-200/20 animate-fade-in">
+                                <div className="flex justify-between font-black text-[11px]">
+                                  <span>⚠️ {lang === "ar" ? "حجز عاجل (خلال أقل من 48 ساعة):" : "⚠️ Urgent Booking (< 48 hrs):"}</span>
+                                  <span>+300 ج / ليلة</span>
+                                </div>
+                                <span className="text-[10px] text-amber-500/80">
+                                  {lang === "ar" 
+                                    ? "نظراً لأن ميعاد حجزك يبدأ خلال أقل من 48 ساعة، يتم إضافة 300 جنيه تلقائياً كرسوم استعجال على الليلة!" 
+                                    : "Because your stay is within less than 48 hours, EGP 300 is precalculated and added per night."}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 my-2"></div>
+                            
+                            <div className="flex justify-between items-center bg-primary/5 p-3 rounded-2xl border border-primary/10">
+                              <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{lang === "ar" ? "💵 الإجمالي التقديري للفترة:" : "💵 Total Estimated Price:"}</span>
+                              <span className="text-lg font-black text-primary">
+                                {totalCost} {lang === "ar" ? "جنيه مصري" : "EGP"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="text-center py-8 text-slate-400 text-xs leading-relaxed">
+                        📅 {lang === "ar" ? "يرجى تحديد تواريخ الدخول والخروج لعرض مدة الحجز وحساب السعر التقريبي فوراً بالجنيه المصري" : "Please select dates to view duration & calculate price automatically in Egyptian Pounds"}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="text-[11px] text-slate-400 leading-relaxed rtl:text-right">
+                      💡 {lang === "ar" 
+                        ? "ملاحظة: سيقوم مالك الحجز بمراجعة تفاصيل الموقع والمواعيد لإعطائك السعر النهائي المناسب للفترة المخصصة لتكون على علم تام بكل ما ستدفعه!"
+                        : "Note: The actual assigned owner will specify their confirmation and rate for the selected period dynamically so you always know exactly what you owe!"}
+                    </p>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-primary hover:bg-[#ff7530] disabled:bg-slate-300 py-3 rounded-xl text-white font-extrabold text-xs transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-orange-100 dark:shadow-none"
+                    >
+                      {loading ? "..." : (lang === "ar" ? "🚀 تسجيل طلب الحجز المرن المباشر" : "🚀 File Flexible Stay Request")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {/* Slide-over or dialog container for booking details */}
       {selectedChalet && (
@@ -626,6 +1180,19 @@ export default function CustomerView({
                           className="w-full px-4 py-2 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-primary text-sm bg-slate-50 dark:bg-slate-800 font-medium"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold mb-1 text-slate-500">
+                        {lang === "ar" ? "⏱️ التوقيت المفضل والمطالب الخاصة / التعليق:" : "⏱️ Preferred Arrival Time & Custom Notes:"}
+                      </label>
+                      <textarea
+                        value={customerNotes}
+                        onChange={(e) => setCustomerNotes(e.target.value)}
+                        placeholder={lang === "ar" ? "مثال: حجز دخول باكر الساعة 10 صباحاً، شاليه هادئ، طابق أرضي..." : "e.g., early check-in at 10 AM, high floor preferred..."}
+                        rows={2}
+                        className="w-full px-4 py-2 border border-gray-100 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary text-sm bg-slate-50 dark:bg-slate-800 resize-none font-medium text-slate-800 dark:text-slate-100"
+                      />
                     </div>
 
                     {/* Show live price calculation */}

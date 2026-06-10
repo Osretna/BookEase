@@ -69,7 +69,10 @@ export const translations = {
     saveBranding: "حفظ التغييرات الهوية",
     bookingsManager: "إدارة الحجوزات العامة",
     createSuccess: "تم إنشاء حساب صاحب الشاليه بنجاح! يمكنه الآن الدخول لتغيير كلمة المرور.",
-    requiredFields: "يرجى ملء جميع الحقول المطلوبة!"
+    requiredFields: "يرجى ملء جميع الحقول المطلوبة!",
+    customerLocation: "موقعك الجغرافي / عنوانك المباشر",
+    loadingLocation: "جاري تحديد موقعك الجغرافي تلقائياً...",
+    autoLocationTip: "اضغط لتحديث موقعك الجغرافي الحالي تلقائياً"
   },
   en: {
     siteTitle: "Porto South Beach Sokhna 🏖️",
@@ -141,6 +144,9 @@ export const translations = {
     saveBranding: "Apply Branding Customizations",
     bookingsManager: "All System Reservation Logs",
     createSuccess: "Registered owner successfully! Credentials initialized securely.",
-    requiredFields: "Please input all required parameters!"
+    requiredFields: "Please input all required parameters!",
+    customerLocation: "Your GPS Coordinates / Address",
+    loadingLocation: "Auto-detecting your location...",
+    autoLocationTip: "Click to auto-refresh current GPS location"
   }
 };

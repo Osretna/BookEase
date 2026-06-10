@@ -17,6 +17,7 @@ interface OwnerDashboardProps {
   onDeleteChalet: (chaletId: string) => Promise<void>;
   onUpdateChalet: (chaletId: string, updatedFields: Partial<Chalet>) => Promise<void>;
   onUpdateBookingStatus: (bookingId: string, status: "confirmed" | "rejected") => Promise<void>;
+  onUpdateBooking?: (bookingId: string, updatedFields: Partial<Booking>) => Promise<void>;
 }
 
 export default function OwnerDashboard({
@@ -29,7 +30,8 @@ export default function OwnerDashboard({
   onAddChalet,
   onDeleteChalet,
   onUpdateChalet,
-  onUpdateBookingStatus
+  onUpdateBookingStatus,
+  onUpdateBooking
 }: OwnerDashboardProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState("");
@@ -42,6 +44,11 @@ export default function OwnerDashboard({
   const [instapayAddress, setInstapayAddress] = useState("");
   const [walletNumber, setWalletNumber] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Flexible booking custom claim states
+  const [claimingBooking, setClaimingBooking] = useState<Booking | null>(null);
+  const [claimChaletId, setClaimChaletId] = useState("");
+  const [claimPricePerNight, setClaimPricePerNight] = useState("");
 
   // Edit States for the Manual edit modal overlay
   const [editingChalet, setEditingChalet] = useState<Chalet | null>(null);
@@ -145,6 +152,43 @@ export default function OwnerDashboard({
       });
 
       setEditingChalet(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClaimSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!claimingBooking || !onUpdateBooking) return;
+    if (!claimChaletId || !claimPricePerNight) {
+      alert(lang === "ar" ? "برجاء اختيار الشاليه وتحديد سعر الليلة!" : "Please select a chalet and specify a nightly price!");
+      return;
+    }
+
+    const targetChalet = chalets.find(c => c.id === claimChaletId);
+    if (!targetChalet) return;
+
+    // Calculate nights
+    const diffTime = Math.abs(new Date(claimingBooking.endDate).getTime() - new Date(claimingBooking.startDate).getTime());
+    const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    const finalTotal = days * Number(claimPricePerNight);
+
+    setLoading(true);
+    try {
+      await onUpdateBooking(claimingBooking.id, {
+        chaletId: targetChalet.id,
+        chaletName: targetChalet.name,
+        ownerId: currentOwnerId,
+        nightPrice: Number(claimPricePerNight),
+        totalPrice: finalTotal,
+        status: "confirmed"
+      });
+      setClaimingBooking(null);
+      setClaimChaletId("");
+      setClaimPricePerNight("");
+      alert(lang === "ar" ? "🎉 تم حجز واعتماد وتسعير الطلب المرن وإضافته لشاليهك بنجاح!" : "🎉 Booking assigned to your chalet & priced successfully!");
     } catch (err) {
       console.error(err);
     } finally {
@@ -624,6 +668,205 @@ export default function OwnerDashboard({
             {loading ? (lang === "ar" ? "جاري الحفظ..." : "Saving Chalet...") : t.saveChalet}
           </button>
         </form>
+      )}
+
+      {/* Flexible Custom Booking Pool */}
+      <div className="bg-gradient-to-r from-orange-50/50 to-primary/5 dark:from-slate-900 dark:to-orange-950/20 border border-orange-100 dark:border-orange-900/30 rounded-3xl p-6 shadow-sm mb-8 animate-fade-in">
+        <div className="flex items-center justify-between pb-3 border-b border-orange-100/50 dark:border-orange-900/20 mb-4">
+          <div className="flex items-center gap-2 text-primary">
+            <span className="text-xl">✨</span>
+            <h3 className="font-black text-sm sm:text-base">
+              {lang === "ar" ? "طلبات الإقامة المرنة والمخصصة المعلقة (متاح التسعير والقبول) ⭐" : "Flexible Pending Custom Stay Demands (Ready to Price & Accept) ⭐"}
+            </h3>
+          </div>
+          <span className="bg-primary/25 text-primary text-xs font-black px-2.5 py-1 rounded-full">
+            {bookings.filter(b => b.chaletId === "flexible" && b.status === "pending").length} {lang === "ar" ? "طلبات" : "Demands"}
+          </span>
+        </div>
+
+        <div className="space-y-4">
+          {bookings.filter(b => b.chaletId === "flexible" && b.status === "pending").map((req) => {
+            // Calculate nights
+            const diffTime = Math.abs(new Date(req.endDate).getTime() - new Date(req.startDate).getTime());
+            const daysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+            
+            // Check urgency (less than 48 hours check-in from today)
+            const checkInDate = new Date(req.startDate + "T00:00:00");
+            const todayNow = new Date();
+            const diffTimeHours = (checkInDate.getTime() - todayNow.getTime()) / (1000 * 60 * 60);
+            const isUrgent = diffTimeHours <= 48;
+
+            return (
+              <div key={req.id} className="border border-orange-100 dark:border-orange-900/20 p-4 sm:p-5 rounded-2xl hover:shadow bg-white/40 dark:bg-slate-950/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in text-clean-dark dark:text-slate-100">
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">{req.customerName}</span>
+                    <span className="px-2.5 py-0.5 text-[10px] font-black rounded-lg bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300">
+                      {req.terraceType === "ground" ? (lang === "ar" ? "🏝️ كاستوم: مسطبة أرضي" : "🏝️ Ground Terrace") : (lang === "ar" ? "🌅 كاستوم: مسطبة علوي" : "🌅 Upper Terrace")}
+                    </span>
+                    {isUrgent && (
+                      <span className="px-2.5 py-0.5 text-[10px] font-black rounded-lg bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200/20 animate-pulse">
+                        ⚠️ {lang === "ar" ? "حجز عاجل جداً (<48 ساعة +300ج ليلة)" : "Urgent Last-minute (<48h)"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                    <div>
+                      {lang === "ar" ? "📆 الفترة المحددة:" : "📆 Booking Period:"} <span className="font-extrabold text-slate-700 dark:text-slate-300">{req.startDate} {lang === "ar" ? "إلى" : "to"} {req.endDate} ({daysCount} {lang === "ar" ? "ليالي" : "nights"})</span>
+                    </div>
+                    <div>
+                      {lang === "ar" ? "📍 موقع العميل:" : "📍 Customer Location:"} <span className="font-medium text-slate-700 dark:text-slate-300 truncate inline-block max-w-[200px]" title={req.customerLocation}>{req.customerLocation}</span>
+                    </div>
+                    {req.notes && (
+                      <div className="sm:col-span-2">
+                        {lang === "ar" ? "⏱️ تمنيات التوقيت والطلب المخصوص:" : "⏱️ Preferences & Notes:"} <span className="font-semibold text-primary dark:text-orange-300">{req.notes}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="w-full md:w-auto flex items-center gap-2 justify-end shrink-0">
+                  <button
+                    onClick={() => {
+                      setClaimingBooking(req);
+                      // Pre-fill estimates based on client's requested level
+                      const baseEstimate = req.terraceType === "ground" ? 1500 : 1800;
+                      const initialNightPrice = baseEstimate + (isUrgent ? 300 : 0);
+                      setClaimPricePerNight(String(initialNightPrice));
+                      // Default to owner's first chalet if they have one
+                      if (myChalets.length > 0) {
+                        setClaimChaletId(myChalets[0].id);
+                      }
+                    }}
+                    className="w-full md:w-auto bg-primary hover:bg-[#ff7530] text-white font-extrabold py-2 px-4 rounded-xl text-xs transition shadow-md flex items-center justify-center gap-1.5"
+                  >
+                    🏷️ {lang === "ar" ? "تسعير وتأكيد الحجز لشاليهك" : "Price & Accept Booking"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {bookings.filter(b => b.chaletId === "flexible" && b.status === "pending").length === 0 && (
+            <p className="text-center text-xs text-slate-400 py-6">
+              {lang === "ar" ? "لا توجد طلبات إقامة مرنة معلقة حالياً على بوابة المنتجع." : "No pending flexible Custom stays requests currently on the resort portal."}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Flexible Claim Pricing & Confirmation Modal */}
+      {claimingBooking && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative space-y-5 text-clean-dark dark:text-slate-100 my-8">
+            
+            {/* Header */}
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-black text-primary">
+                  {lang === "ar" ? "📝 تسعير وفرد الطلب وإسناده لشاليهك" : "📝 Price & Assign Custom Stay Request"}
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {lang === "ar" ? "سيتم احتساب الفاتورة تلقائياً للعميل وإرسال تأكيد معتمد بالجنيه المصري" : "The invoice updates automatically in EGP for immediate client viewing."}
+                </p>
+              </div>
+              <button 
+                onClick={() => setClaimingBooking(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-100 font-bold p-1 rounded-full text-xl"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleClaimSubmit} className="space-y-4 text-left rtl:text-right">
+              <div>
+                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                  🏡 {lang === "ar" ? "اختر أحد شاليهاتك لتسكين هذا الحجز:" : "Select your chalet to assign:"}
+                </label>
+                <select
+                  required
+                  value={claimChaletId}
+                  onChange={(e) => setClaimChaletId(e.target.value)}
+                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">-- {lang === "ar" ? "اختر أحد شاليهاتك المتوفرة" : "Pick one of your listed chalets"} --</option>
+                  {myChalets.map((ch) => (
+                    <option key={ch.id} value={ch.id}>
+                      {ch.name} ({ch.pricePerNight} {lang === "ar" ? "ج/ليلة" : "EGP/night"})
+                    </option>
+                  ))}
+                </select>
+                {myChalets.length === 0 && (
+                  <p className="text-[10px] text-red-500 font-black mt-1">
+                    ⚠ {lang === "ar" ? "ليس لديك أي شاليهات مضافة حالياً! يرجى إضافة شاليه أولاً لتتمكن من تسعير الطلبات" : "You have no core chalets added! Please create a list listing first to claim stays."}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
+                  💰 {lang === "ar" ? "حدد سعر الليلة للفترة (بالجنيه المصري):" : "Specify nightly rate for this period (EGP):"}
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={claimPricePerNight}
+                  onChange={(e) => setClaimPricePerNight(e.target.value)}
+                  placeholder="e.g. 1800"
+                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  {lang === "ar" 
+                    ? "✨ سيتم محاسبة العميل بناءً على هذا السعر للفترة المحددة بالكامل." 
+                    : "✨ Client bill will calculate using this rate for the stay period."}
+                </span>
+              </div>
+
+              {/* Dynamic Calculation breakdown block inside claim */}
+              {claimPricePerNight && (
+                <div className="bg-slate-50 dark:bg-slate-950/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-650 dark:text-slate-400">
+                    <span>{lang === "ar" ? "عدد الليالي:" : "Nights:"}</span>
+                    <span className="font-bold">
+                      {Math.ceil(Math.abs(new Date(claimingBooking.endDate).getTime() - new Date(claimingBooking.startDate).getTime()) / (1000 * 60 * 60 * 24)) || 1} {lang === "ar" ? "ليالي" : "nights"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-650 dark:text-slate-400">
+                    <span>{lang === "ar" ? "سعر الليلة المُدخل:" : "Specified rate:"}</span>
+                    <span className="font-bold">{claimPricePerNight} {lang === "ar" ? "جنية" : "EGP"}</span>
+                  </div>
+                  <div className="h-px bg-slate-200 dark:bg-slate-850 my-1"></div>
+                  <div className="flex justify-between text-teal-650 dark:text-teal-400 font-bold">
+                    <span>{lang === "ar" ? "إجمالي المبلغ المستحق للعميل:" : "Grand Total client pays:"}</span>
+                    <span>
+                      {(Math.ceil(Math.abs(new Date(claimingBooking.endDate).getTime() - new Date(claimingBooking.startDate).getTime()) / (1000 * 60 * 60 * 24)) || 1) * Number(claimPricePerNight)} {lang === "ar" ? "جنية" : "EGP"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-3">
+                <button
+                  type="submit"
+                  disabled={loading || myChalets.length === 0}
+                  className="flex-1 bg-primary hover:bg-[#ff7530] text-white font-extrabold py-2.5 rounded-xl text-xs transition text-center disabled:bg-slate-300"
+                >
+                  {loading ? "..." : (lang === "ar" ? "✅ اعتماد الحجز وإرسال الفاتورة" : "✅ Confirmed stay")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClaimingBooking(null)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl px-4 py-2 text-xs font-bold"
+                >
+                  {lang === "ar" ? "إلغاء الحجز" : "Cancel"}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Booking requests */}

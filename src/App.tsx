@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, getDoc } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "./firebase";
-import { Chalet, Booking, Review, SiteConfig } from "./types";
+import { Chalet, Booking, Review, SiteConfig, UserProfile } from "./types";
 import { translations } from "./translations";
 
 // Sub-components
@@ -41,6 +41,7 @@ export default function App() {
   const [chalets, setChalets] = useState<Chalet[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [owners, setOwners] = useState<UserProfile[]>([]);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>({
     id: "site-config",
     siteName: "بورتو ساوث بيتش السخنة 🏖️",
@@ -107,26 +108,59 @@ export default function App() {
       console.warn("Branding configurations omitted or sandbox mode.", error);
     });
 
+    // 5. Sync owners accounts from the centralized dashboard portal
+    const unsubscribeOwners = onSnapshot(collection(db, "users"), (snapshot) => {
+      const list: UserProfile[] = [];
+      snapshot.forEach((doc) => {
+        const u = doc.data() as UserProfile;
+        if (u.role === "owner") {
+          list.push(u);
+        }
+      });
+      setOwners(list);
+    }, (error) => {
+      console.warn("Offline fallback, syncing owners skipped:", error);
+    });
+
     return () => {
       unsubscribeChalets();
       unsubscribeBookings();
       unsubscribeReviews();
       unsubscribeSettings();
+      unsubscribeOwners();
     };
   }, []);
 
   // --- Core CRUD Handlers with Firebase Secure Validation & Atomic Guarantees ---
 
   // A. Place a new pending reservation request (Anyone can execute)
-  const handleAddBooking = async (bookingData: Omit<Booking, "id" | "status" | "totalPrice">) => {
+  const handleAddBooking = async (bookingData: Omit<Booking, "id" | "status" | "totalPrice"> & { isFlexible?: boolean; terraceType?: "ground" | "upper"; notes?: string; nightPrice?: number }) => {
     const newId = "booking_" + Math.random().toString(36).substring(2, 15);
-    const targetChalet = chalets.find(c => c.id === bookingData.chaletId);
-    if (!targetChalet) throw new Error("Chalet listing not found!");
-
+    
     // Calculate days duration count for pricing
     const diffTime = Math.abs(new Date(bookingData.endDate).getTime() - new Date(bookingData.startDate).getTime());
-    const daysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const calculatedPrice = daysCount * targetChalet.pricePerNight;
+    const daysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    
+    // Check if the booking check-in date is within 48h to adjust pricing by +300 EGP as per user's urgent request instruction
+    const checkInDate = new Date(bookingData.startDate + "T00:00:00");
+    const todayNow = new Date();
+    const diffTimeHrs = (checkInDate.getTime() - todayNow.getTime()) / (1000 * 60 * 60);
+    const isUrgent = diffTimeHrs <= 48;
+    const penaltyAddon = isUrgent ? 300 : 0;
+
+    let calculatedPrice = 0;
+    
+    if (bookingData.chaletId === "flexible") {
+      // Base estimated rates for flexible bookings (Ground Terrace = 1500 / Upper Terrace = 1800 EGP)
+      const baseRate = bookingData.terraceType === "ground" ? 1500 : 1800;
+      const finalNightPrice = baseRate + penaltyAddon;
+      calculatedPrice = daysCount * finalNightPrice;
+    } else {
+      const targetChalet = chalets.find(c => c.id === bookingData.chaletId);
+      if (!targetChalet) throw new Error("Chalet listing not found!");
+      const finalNightPrice = targetChalet.pricePerNight + penaltyAddon;
+      calculatedPrice = daysCount * finalNightPrice;
+    }
 
     const fullBooking: Booking = {
       ...bookingData,
@@ -216,6 +250,18 @@ export default function App() {
       });
 
       alert(status === "confirmed" ? t.confirmSuccess : t.rejectSuccess);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `bookings/${bookingId}`);
+    }
+  };
+
+  // F. Comprehensive Update Booking (By Owner or Admin - for custom pricing and assignment)
+  const handleUpdateBooking = async (bookingId: string, updatedFields: Partial<Booking>) => {
+    try {
+      await updateDoc(doc(db, "bookings", bookingId), {
+        ...updatedFields,
+        updatedAt: new Date().toISOString()
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `bookings/${bookingId}`);
     }
@@ -448,6 +494,7 @@ export default function App() {
               chalets={chalets}
               bookings={bookings}
               reviews={reviews}
+              owners={owners}
               onAddBooking={handleAddBooking}
               onAddReview={handleAddReview}
             />
@@ -465,6 +512,7 @@ export default function App() {
               onDeleteChalet={handleDeleteChalet}
               onUpdateChalet={handleUpdateChalet}
               onUpdateBookingStatus={handleUpdateBookingStatus}
+              onUpdateBooking={handleUpdateBooking}
             />
           )}
 

@@ -39,6 +39,10 @@ export interface Booking {
   status: "pending" | "confirmed" | "cancelled" | "rejected";
   createdAt?: string;
   updatedAt?: string;
+  isFlexible?: boolean;
+  terraceType?: "ground" | "upper";
+  notes?: string;
+  nightPrice?: number;
 }
 
 export interface Review {
