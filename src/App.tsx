@@ -189,6 +189,18 @@ export default function App() {
     }
   };
 
+  // Update Chalet Listing details (By Owner or Admin)
+  const handleUpdateChalet = async (chaletId: string, updatedFields: Partial<Chalet>) => {
+    try {
+      await updateDoc(doc(db, "chalets", chaletId), {
+        ...updatedFields,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chalets/${chaletId}`);
+    }
+  };
+
   // E. Update Booking state accepted/rejected (By owner of that chalet, or system administrator)
   const handleUpdateBookingStatus = async (bookingId: string, status: "confirmed" | "rejected") => {
     try {
@@ -451,6 +463,7 @@ export default function App() {
               bookings={bookings}
               onAddChalet={handleAddChalet}
               onDeleteChalet={handleDeleteChalet}
+              onUpdateChalet={handleUpdateChalet}
               onUpdateBookingStatus={handleUpdateBookingStatus}
             />
           )}
