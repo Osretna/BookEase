@@ -64,7 +64,7 @@ export default function OwnerDashboard({
 
   const handleCreateChalet = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !pricePerNight || !locationLink) {
+    if (!name || !pricePerNight) {
       alert(t.requiredFields);
       return;
     }
@@ -81,6 +81,7 @@ export default function OwnerDashboard({
         ? validImages 
         : ["https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=800&fit=crop"];
       
+      const defaultLoc = "https://maps.google.com/?q=Porto+South+Beach+Resort+El+Sokhna";
       await onAddChalet({
         name: name.trim(),
         description: description.trim() || (lang === "ar" ? "شاليه مميز يطل على حمامات السباحة والبحر في بورتو ساوث بيتش السخنة." : "Beautiful chalet overlooking pools & sea in Porto South Beach Resort."),
@@ -89,7 +90,7 @@ export default function OwnerDashboard({
         pricePerNight: Number(pricePerNight),
         roomsCount: Number(roomsCount),
         bathroomsCount: Number(bathroomsCount),
-        locationLink: locationLink.trim(),
+        locationLink: locationLink.trim() || defaultLoc,
         images: finalImages,
         phone: currentOwnerPhone || "+201000000000",
         instapayAddress: instapayAddress.trim(),
@@ -115,7 +116,7 @@ export default function OwnerDashboard({
   const handleSaveChaletEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingChalet) return;
-    if (!editName || !editPricePerNight || !editLocationLink) {
+    if (!editName || !editPricePerNight) {
       alert(t.requiredFields);
       return;
     }
@@ -130,13 +131,14 @@ export default function OwnerDashboard({
         ? validImages 
         : ["https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=800&fit=crop"];
 
+      const defaultLoc = "https://maps.google.com/?q=Porto+South+Beach+Resort+El+Sokhna";
       await onUpdateChalet(editingChalet.id, {
         name: editName.trim(),
         description: editDescription.trim(),
         pricePerNight: Number(editPricePerNight),
         roomsCount: Number(editRoomsCount),
         bathroomsCount: Number(editBathroomsCount),
-        locationLink: editLocationLink.trim(),
+        locationLink: editLocationLink.trim() || defaultLoc,
         images: finalImages,
         instapayAddress: editInstapayAddress.trim(),
         walletNumber: editWalletNumber.trim()
@@ -349,10 +351,18 @@ export default function OwnerDashboard({
   };
 
   const handleWhatsappNotification = (booking: Booking) => {
+    // Find the chalet details to get the custom wallet or instapay address stored for this chalet
+    const chalet = chalets.find(c => c.id === booking.chaletId);
+    const walletInfoAr = chalet?.walletNumber ? `\n📱 للدفع عبر محفظة كاش (فودافون كاش، إلخ) على الرقم: ${chalet.walletNumber}` : "";
+    const instapayInfoAr = chalet?.instapayAddress ? `\n⚡ أو التحويل الفوري عبر انستا باي (InstaPay IPN): ${chalet.instapayAddress}` : "";
+    
+    const walletInfoEn = chalet?.walletNumber ? `\n📱 Send payment to Mobile Wallet Cash: ${chalet.walletNumber}` : "";
+    const instapayInfoEn = chalet?.instapayAddress ? `\n⚡ Or via InstaPay IPN: ${chalet.instapayAddress}` : "";
+
     // Generate lovely bilingual preset message
     const text = lang === "ar"
-      ? `مرحباً ${booking.customerName}، يسعدنا إعلامك بأنه تم تأكيد حجزك لشاليه (${booking.chaletName}) في بورتو ساوث بيتش السخنة للفترة من ${booking.startDate} إلى ${booking.endDate}. إجمالي المبلغ: ${booking.totalPrice} جنية. نتمنى لك إقامة سعيدة! 🌴☀️`
-      : `Dear ${booking.customerName}, we are pleased to confirm your booking for Chalet (${booking.chaletName}) at Porto South Beach Sokhna from ${booking.startDate} to ${booking.endDate}. Total: EGP ${booking.totalPrice}. Have a great summer stay! 🌴☀️`;
+      ? `مرحباً ${booking.customerName}، يسعدنا إعلامك بأنه تم تأكيد حجزك لشاليه (${booking.chaletName}) في بورتو ساوث بيتش السخنة للفترة من ${booking.startDate} إلى ${booking.endDate}.\n\n💰 إجمالي المبلغ المطلوب: ${booking.totalPrice} جنية.\n${walletInfoAr}${instapayInfoAr}\n\nيرجى تحويل المبلغ وتأكيد الدفع للاستلام. نتمنى لك إقامة سعيدة! 🌴☀️`
+      : `Dear ${booking.customerName}, we are pleased to confirm your booking for Chalet (${booking.chaletName}) at Porto South Beach Sokhna from ${booking.startDate} to ${booking.endDate}.\n\n💰 Total Price: EGP ${booking.totalPrice}.\n${walletInfoEn}${instapayInfoEn}\n\nPlease transfer style and confirm your payment. Have a great summer stay! 🌴☀️`;
     
     const formattedPhone = booking.customerPhone.replace(/[\s\+\-]/g, "");
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
@@ -486,18 +496,19 @@ export default function OwnerDashboard({
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold mb-1 text-slate-400">{t.mapsLinkField} (Google Earth) *</label>
+              <label className="block text-xs font-semibold mb-1 text-slate-400">
+                {t.mapsLinkField} {lang === "ar" ? "(اختياري - افتراضياً بورتو ساوث بيتش)" : "(Optional - defaults to Porto South Beach)"}
+              </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
                   <MapPin className="w-4 h-4 text-secondary" />
                 </span>
                 <input
                   type="text"
-                  required
                   value={locationLink}
                   onChange={(e) => setLocationLink(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 text-sm bg-slate-50"
-                  placeholder="https://earth.google.com/web/... or https://maps.google.com/..."
+                  placeholder={lang === "ar" ? "رابط موقع قوقل إيرث أو خرائط قوقل (اختياري)" : "e.g. Google Maps URL (Optional)"}
                 />
               </div>
             </div>
@@ -893,17 +904,19 @@ export default function OwnerDashboard({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold mb-1 text-slate-400">{t.mapsLinkField} (Google Earth / Maps) *</label>
+                  <label className="block text-xs font-semibold mb-1 text-slate-400">
+                    {t.mapsLinkField} {lang === "ar" ? "(اختياري - افتراضياً بورتو ساوث بيتش)" : "(Optional - defaults to Porto South Beach)"}
+                  </label>
                   <div className="relative">
                     <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
                       <MapPin className="w-4 h-4 text-secondary" />
                     </span>
                     <input
                       type="text"
-                      required
                       value={editLocationLink}
                       onChange={(e) => setEditLocationLink(e.target.value)}
                       className="w-full pl-9 pr-4 py-2 border border-gray-100 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 text-sm bg-slate-50"
+                      placeholder={lang === "ar" ? "رابط موقع قوقل إيرث أو خرائط قوقل (اختياري)" : "e.g. Google Maps URL (Optional)"}
                     />
                   </div>
                 </div>

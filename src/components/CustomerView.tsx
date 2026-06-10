@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Home, Bed, Bath, DollarSign, MapPin, Phone, Calendar, 
   Star, Send, Check, MessageSquare, AlertTriangle, Shield,
@@ -41,8 +41,54 @@ export default function CustomerView({
   const [error, setError] = useState("");
   const [placedBooking, setPlacedBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(false);
+  const [geoLocating, setGeoLocating] = useState(false);
 
   const t = translations[lang];
+
+  // Auto detect location when user lands or switches language
+  const autoGetLocation = () => {
+    if (!navigator.geolocation) return;
+    setGeoLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        // set temporary coords representation
+        setCustomerLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`, {
+            headers: { 
+              "Accept-Language": lang === "ar" ? "ar" : "en",
+              "User-Agent": "PortoSouthBeachApp/1.0"
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.display_name) {
+              setCustomerLocation(data.display_name);
+            } else {
+              setCustomerLocation(`https://www.google.com/maps?q=${latitude},${longitude}`);
+            }
+          } else {
+            setCustomerLocation(`https://www.google.com/maps?q=${latitude},${longitude}`);
+          }
+        } catch (err) {
+          console.error("Reverse geocoding fail: ", err);
+          setCustomerLocation(`https://www.google.com/maps?q=${latitude},${longitude}`);
+        } finally {
+          setGeoLocating(false);
+        }
+      },
+      (error) => {
+        console.warn("Geolocation permission error:", error);
+        setGeoLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  useEffect(() => {
+    autoGetLocation();
+  }, [lang]);
 
   // Help calculate average ratings
   const getChaletRating = (chaletId: string) => {
@@ -169,9 +215,15 @@ export default function CustomerView({
     const ownerChalet = chalets.find(c => c.id === booking.chaletId);
     const ownerPhone = ownerChalet?.phone || "+201000000000";
 
+    const walletInfoAr = ownerChalet?.walletNumber ? `\n📱 سأقوم بتحويل المبلغ لمحفظة كاش الخاصة بك: ${ownerChalet.walletNumber}` : "";
+    const instapayInfoAr = ownerChalet?.instapayAddress ? `\n⚡ أو الدفع عبر انستا باي (InstaPay IPN): ${ownerChalet.instapayAddress}` : "";
+    
+    const walletInfoEn = ownerChalet?.walletNumber ? `\n📱 I will send funds to your Wallet Cash: ${ownerChalet.walletNumber}` : "";
+    const instapayInfoEn = ownerChalet?.instapayAddress ? `\n⚡ Or pay via InstaPay IPN: ${ownerChalet.instapayAddress}` : "";
+
     const text = lang === "ar"
-      ? `مرحباً، لقد أرسلت طلب حجز شاليه (${booking.chaletName}) عبر الموقع لفترة: من ${booking.startDate} إلى ${booking.endDate}. إجمالي السعر المتوقع: ${booking.totalPrice} جنية. يرجى مراجعة وتأكيد الحجز لي! الاسم: ${booking.customerName}`
-      : `Hello, I just requested booking for Chalet (${booking.chaletName}) from ${booking.startDate} to ${booking.endDate} on Sokhna Portal. Total price: EGP ${booking.totalPrice}. Please confirm my request! Customer: ${booking.customerName}`;
+      ? `مرحباً، لقد أرسلت طلب حجز شاليه (${booking.chaletName}) عبر الموقع لفترة: من ${booking.startDate} إلى ${booking.endDate}.\n💰 إجمالي السعر المتوقع: ${booking.totalPrice} جنية.\n${walletInfoAr}${instapayInfoAr}\n\nيرجى مراجعة وتأكيد الحجز لي! الاسم: ${booking.customerName}`
+      : `Hello, I just requested booking for Chalet (${booking.chaletName}) from ${booking.startDate} to ${booking.endDate} on Sokhna Portal.\n💰 Total price: EGP ${booking.totalPrice}.\n${walletInfoEn}${instapayInfoEn}\n\nPlease confirm my request! Customer: ${booking.customerName}`;
 
     // Clean phone of non-numeric characters for compatibility
     const formattedPhone = ownerPhone.replace(/[\s\+\-]/g, "");
@@ -525,13 +577,27 @@ export default function CustomerView({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold mb-1 text-slate-500">{t.locationDesc}</label>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-xs font-bold text-slate-500">{t.locationDesc}</label>
+                          <button
+                            type="button"
+                            onClick={autoGetLocation}
+                            disabled={geoLocating}
+                            className="text-[10px] text-primary hover:underline flex items-center gap-1 font-bold"
+                          >
+                            {geoLocating ? (
+                              <span>⏳ {lang === "ar" ? "جاري التحديد..." : "Locating..."}</span>
+                            ) : (
+                              <span>📍 {lang === "ar" ? "تحديد تلقائي" : "Auto Locate"}</span>
+                            )}
+                          </button>
+                        </div>
                         <input
                           type="text"
                           value={customerLocation}
                           onChange={(e) => setCustomerLocation(e.target.value)}
                           className="w-full px-4 py-2 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-primary text-sm bg-slate-50 dark:bg-slate-800"
-                          placeholder="Cairo / Google Earth link"
+                          placeholder={lang === "ar" ? "📍 جاري تحديد موقعك تلقائياً..." : "📍 Detecting your location..."}
                         />
                       </div>
                     </div>
