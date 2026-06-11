@@ -2,11 +2,54 @@ import React, { useState, useEffect } from "react";
 import { 
   Users, Settings, Trash2, Plus, Phone, Shield, 
   MapPin, Check, Image as ImageIcon, Calendar,
-  Coins, TrendingUp, BarChart3, Share2, ClipboardList
+  Coins, TrendingUp, BarChart3, Share2, ClipboardList, X
 } from "lucide-react";
 import { UserProfile, SiteConfig, Booking, Chalet } from "../types";
 import { translations } from "../translations";
 import { db } from "../firebase";
+
+const PRESET_RESORT_PHOTOS = [
+  {
+    titleAr: "البسين الرئيسي المميز",
+    titleEn: "Main Swimming Pool",
+    url: "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1200&fit=crop"
+  },
+  {
+    titleAr: "شاطئ رملي ذهبي دافئ",
+    titleEn: "Golden Sandy Coastline",
+    url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&fit=crop"
+  },
+  {
+    titleAr: "شاليه فاخر ومساء ساحر",
+    titleEn: "Luxury Sunset Suite View",
+    url: "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=1200&fit=crop"
+  },
+  {
+    titleAr: "لاندسكيب ومسطبة نضرة",
+    titleEn: "Seaside Sunbeds & Palms",
+    url: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&fit=crop"
+  },
+  {
+    titleAr: "الواجهة المعمارية والاستقبال",
+    titleEn: "Porto Architectural Entry",
+    url: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&fit=crop"
+  },
+  {
+    titleAr: "الإنارة والكوبري المائي ليلاً",
+    titleEn: "Aqua Park Lagoon Walk",
+    url: "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1200&fit=crop"
+  },
+  {
+    titleAr: "مظلات وجلسة شمسية",
+    titleEn: "Umbrellas Premium Sunny Area",
+    url: "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&fit=crop"
+  },
+  {
+    titleAr: "مطعم المأكولات البحرية الفخم",
+    titleEn: "Waterfront Dining Terrace",
+    url: "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=1200&fit=crop"
+  }
+];
 
 interface AdminDashboardProps {
   lang: "ar" | "en";
@@ -32,6 +75,17 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
   const [backgroundImageUrl, setBackgroundImageUrl] = useState(activeConfig?.backgroundImageUrl || "");
   const [galleryImages, setGalleryImages] = useState<string[]>(activeConfig?.galleryImages || []);
   const [newImageLink, setNewImageLink] = useState("");
+  
+  // Dedicated Gallery Modal state
+  const [isGalleryModalOpen, setIsGalleryModalOpen] = useState(false);
+  const [modalNewImageLink, setModalNewImageLink] = useState("");
+  const [modalGallery, setModalGallery] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isGalleryModalOpen) {
+      setModalGallery(galleryImages || []);
+    }
+  }, [isGalleryModalOpen, galleryImages]);
 
   const t = translations[lang];
 
@@ -275,6 +329,21 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
     setSuccess(t.siteConfigUpdated);
   };
 
+  const handleSaveGalleryModelDirect = async (newGalleryList: string[]) => {
+    const updated: SiteConfig = {
+      id: "site-config",
+      siteName,
+      logoUrl: logoUrl || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=100&h=100&fit=crop",
+      backgroundImageUrl: backgroundImageUrl || "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1600&fit=crop",
+      galleryImages: newGalleryList
+    };
+
+    onUpdateConfig(updated);
+    setGalleryImages(newGalleryList);
+    setSuccess(lang === "ar" ? "تم حفظ ألبوم صور المنتجع بنجاح وتعميمها على جميع المستخدمين! 🏖️" : "Resort photo album successfully saved and published! 🏖️");
+    setIsGalleryModalOpen(false);
+  };
+
   return (
     <div className="space-y-8 animate-fade-in text-slate-800 dark:text-slate-100">
       
@@ -288,6 +357,19 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
           <p className="text-slate-400 text-xs mt-1">
             {lang === "ar" ? "لوحة التحكم الرئيسية لإدارة أصحاب الشاليهات وهوية الموقع" : "Porto South Beach administrator workspace"}
           </p>
+        </div>
+        
+        {/* Dedicated Admin button for Sokhna Resort Photos Album */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setIsGalleryModalOpen(true)}
+            className="w-full md:w-auto bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-black px-5 py-3 rounded-2xl transition-all duration-300 shadow-lg shadow-orange-500/10 dark:shadow-none cursor-pointer flex items-center justify-center gap-2 text-xs md:text-sm animate-pulse hover:animate-none scale-100 hover:scale-[1.02]"
+            id="admin-manage-gallery-btn"
+          >
+            <ImageIcon className="w-4 h-4 md:w-5 md:h-5 text-white" />
+            <span>{lang === "ar" ? "📸 تعديل وإضافة صور المنتجع 🏖️" : "📸 Edit & Add Resort Photos 🏖️"}</span>
+          </button>
         </div>
       </div>
 
@@ -639,6 +721,203 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
         </div>
       </div>
 
+      {/* Dedicated Gallery Manager Modal Popup */}
+      {isGalleryModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800 flex flex-col max-h-[90vh] animate-fade-in text-slate-800 dark:text-slate-100">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                  <ImageIcon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-secondary flex items-center gap-1.5">
+                    <span>📸</span>
+                    {lang === "ar" ? "بوابة إدارة وصور ألبوم المنتجع (بورتو ساوث بيتش)" : "Porto South Beach Resort Album Gallery Editor"}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {lang === "ar" ? "تحكم بالصور المعروضة للعميل في واجهة الحجز مباشرة" : "Control visual gallery assets loaded by incoming guests"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsGalleryModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-full cursor-pointer transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-right rtl:text-right">
+              
+              {/* Add Custom picture */}
+              <div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2.5">
+                <label className="block text-xs font-extrabold text-secondary">
+                  🔗 {lang === "ar" ? "إضافة صورة مخصصة جديدة برابط مباشر:" : "Add New Image via Direct URL link:"}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={modalNewImageLink}
+                    onChange={(e) => setModalNewImageLink(e.target.value)}
+                    placeholder={lang === "ar" ? "ضع رابط الصورة الكامل هنا (مثال: https://...)" : "Paste image URL starting with http..."}
+                    className="flex-1 px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-xl outline-none focus:ring-2 focus:ring-primary text-xs"
+                    id="modal-image-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (modalNewImageLink && modalNewImageLink.trim().startsWith("http")) {
+                        setModalGallery([...modalGallery, modalNewImageLink.trim()]);
+                        setModalNewImageLink("");
+                      } else {
+                        alert(lang === "ar" ? "الرجاء إدخال رابط يبدأ بـ http بشكل صحيح" : "Please input a valid URL starting with http");
+                      }
+                    }}
+                    className="bg-primary hover:bg-[#ff7530] text-white font-bold px-4 rounded-xl text-xs transition flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{lang === "ar" ? "إضافة للألبوم" : "Add to Album"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Suggestions Grid */}
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-black text-secondary">
+                  <span>💡</span>
+                  <span>{lang === "ar" ? "صور منتجعات وسياحة جاهزة بنقرة واحدة (أضف فوراً لعرضها للنزلاء):" : "One-Click Instant High-Quality Presets available:"}</span>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {PRESET_RESORT_PHOTOS.map((preset, i) => {
+                    const isAlreadyAdded = modalGallery.includes(preset.url);
+                    return (
+                      <button
+                        type="button"
+                        key={i}
+                        onClick={() => {
+                          if (isAlreadyAdded) {
+                            setModalGallery(modalGallery.filter(u => u !== preset.url));
+                          } else {
+                            setModalGallery([...modalGallery, preset.url]);
+                          }
+                        }}
+                        className={`relative aspect-video rounded-xl overflow-hidden border-2 text-left group transition cursor-pointer ${
+                          isAlreadyAdded ? "border-emerald-500 ring-2 ring-emerald-400" : "border-slate-100 hover:border-primary dark:border-slate-800"
+                        }`}
+                      >
+                        <img
+                          src={preset.url}
+                          alt={preset.titleEn}
+                          className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-1.5 pt-4">
+                          <p className="text-[9px] text-white font-bold truncate leading-none">
+                            {lang === "ar" ? preset.titleAr : preset.titleEn}
+                          </p>
+                        </div>
+                        {isAlreadyAdded ? (
+                          <div className="absolute top-1 right-1 bg-emerald-500 text-white rounded-full p-0.5">
+                            <Check className="w-2.5 h-2.5" />
+                          </div>
+                        ) : (
+                          <div className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100">
+                            <Plus className="w-2.5 h-2.5" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Active Gallery Preview */}
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-extrabold text-secondary flex items-center gap-1">
+                    <span>🖼️</span>
+                    <span>{lang === "ar" ? "ألبوم الصور النشطة المعروضة حالياً بالصفحة الرئيسية:" : "Active gallery slides being shown to guests:"}</span>
+                  </span>
+                  <span className="text-[10px] font-black bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
+                    {modalGallery.length} {lang === "ar" ? "صورة مفعلة" : "images active"}
+                  </span>
+                </div>
+
+                {modalGallery.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3 p-3 bg-slate-50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850 max-h-60 overflow-y-auto">
+                    {modalGallery.map((img, idx) => (
+                      <div
+                        key={idx}
+                        className="relative ring-1 ring-slate-100 dark:ring-slate-800 aspect-square rounded-xl overflow-hidden bg-slate-100 group shadow-sm"
+                      >
+                        <img
+                          src={img}
+                          alt="Active catalog view"
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute top-1 left-1 bg-black/60 rounded-lg px-1.5 py-0.5">
+                          <span className="text-[8px] font-bold text-white">#{idx + 1}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalGallery(modalGallery.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute inset-0 bg-red-600/80 hover:bg-red-700/90 text-white opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-1 text-[10px] font-black cursor-pointer"
+                          title={lang === "ar" ? "حذف الصورة" : "Remove photo"}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>{lang === "ar" ? "حذف" : "Remove"}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-slate-50 dark:bg-slate-950/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
+                    🏝️ {lang === "ar" ? "لا توجد صور في المعرض حالياً. يرجى اختيار صور مقترحة من الأعلى لتفعيل البوم للنزيل!" : "No photos. Choose recommended photos above to activate slide-show!"}
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-850/65 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-3 justify-between items-center shrink-0">
+              <span className="text-[10px] sm:text-xs text-slate-400 text-center sm:text-right leading-relaxed">
+                {lang === "ar"
+                  ? "💡 تذكر: بمجرد الحفظ، سيتم تعميم الألبوم فوراً على جميع النزلاء بدون الحاجة لتعديل برمجي!"
+                  : "💡 Changes are synchronized immediately to incoming guests upon clicking save."}
+              </span>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsGalleryModalOpen(false)}
+                  className="flex-1 sm:flex-none border border-slate-200 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800 text-slate-500 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                >
+                  {lang === "ar" ? "إلغاء وتراجع" : "Cancel & Discard"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveGalleryModelDirect(modalGallery)}
+                  className="flex-1 sm:flex-none bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-extrabold px-6 py-2 rounded-xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>💾</span>
+                  <span>{lang === "ar" ? "حفظ وتثبيت الألبوم بالموقع" : "Save and Commit Album"}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+      
       {/* Owners List Table */}
       <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
         <div className="flex items-center gap-2 text-secondary mb-4">
