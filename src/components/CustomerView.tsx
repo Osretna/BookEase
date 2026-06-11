@@ -346,6 +346,11 @@ export default function CustomerView({
     e.preventDefault();
     setFlexError("");
 
+    if (!selectedOwnerId || selectedOwnerId === "all") {
+      setFlexError(lang === "ar" ? "يرجى تحديد صاحب الشاليه للتعامل معه وإرسال الفاتورة له أولاً!" : "Please select a chalet owner to book and send the invoice first!");
+      return;
+    }
+
     if (!flexName || !flexPhone || !flexStartDate || !flexEndDate) {
       setFlexError(t.requiredFields);
       return;
@@ -1068,11 +1073,12 @@ export default function CustomerView({
                       👤 {lang === "ar" ? "صاحب الشاليه الذي ترغب في التعامل معه:" : "Chalet Owner you wish to book with:"} <span className="text-red-500">*</span>
                     </label>
                     <select
-                      value={selectedOwnerId}
+                      value={selectedOwnerId === "all" ? "" : selectedOwnerId}
                       onChange={(e) => setSelectedOwnerId(e.target.value)}
+                      required
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:outline-none transition font-black text-primary"
                     >
-                      <option value="all">🌐 {lang === "ar" ? "أي صاحب شاليه متوفر (حسب السعر العام)" : "Any Available Owner (General rate)"}</option>
+                      <option value="" disabled>🌐 {lang === "ar" ? "اختر صاحب الشاليه للتعامل معه وارسال الفاتورة" : "Select Chalet Owner to book and invoice"}</option>
                       {combinedOwners.map((o) => (
                         <option key={o.uid} value={o.uid}>
                           👤 {o.username} {o.phone ? `(${o.phone})` : ""}
