@@ -1,0 +1,29 @@
+{
+  "name": "بورتو ساوث بيتش السخنة | Porto South Beach",
+  "short_name": "بورتو السخنة",
+  "description": "حجز شاليهات بورتو ساوث بيتش العين السخنة مباشرة من الملاك",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#ff7530",
+  "categories": ["travel", "booking"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff7530' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2 22 1-1h3l1-3h4l1 3h3l1 1h5'/%3E%3Cpath d='M12 2v8'/%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3Cpath d='M12 5V2'/%3E%3Cpath d='M17 12v5H7v-5'/%3E%3C/svg%3E",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://img.icons8.com/color/192/beach.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/beach.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

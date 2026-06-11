@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { Chalet, Booking, Review, UserProfile, PriceRule } from "../types";
 import { translations } from "../translations";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../firebase";
 
 interface CustomerViewProps {
   lang: "ar" | "en";
@@ -78,9 +80,49 @@ export default function CustomerView({
   const [flexStartDate, setFlexStartDate] = useState("");
   const [flexEndDate, setFlexEndDate] = useState("");
   const [flexTerraceType, setFlexTerraceType] = useState<"ground" | "upper">("ground");
+  const [flexBookingType, setFlexBookingType] = useState<"timeshare" | "ownership" | "hotel">("timeshare");
   const [flexNotes, setFlexNotes] = useState("");
   const [flexError, setFlexError] = useState("");
   const [flexPlacedBooking, setFlexPlacedBooking] = useState<Booking | null>(null);
+
+  // Predefined rates for the selected owner
+  const [selectedOwnerRates, setSelectedOwnerRates] = useState<{
+    timeshare: string;
+    ownership: string;
+    hotel: string;
+    walletNumber?: string;
+    instapayAddress?: string;
+  }>({
+    timeshare: "1500",
+    ownership: "2000",
+    hotel: "3000"
+  });
+
+  useEffect(() => {
+    if (selectedOwnerId && selectedOwnerId !== "all") {
+      const unsub = onSnapshot(doc(db, "owner_rates", selectedOwnerId), (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setSelectedOwnerRates({
+            timeshare: data.timeshare || "1500",
+            ownership: data.ownership || "2000",
+            hotel: data.hotel || "3000",
+            walletNumber: data.walletNumber || "",
+            instapayAddress: data.instapayAddress || ""
+          });
+        } else {
+          setSelectedOwnerRates({
+            timeshare: "1500",
+            ownership: "2000",
+            hotel: "3000"
+          });
+        }
+      }, (err) => {
+        console.error("Firestore loading rates error: ", err);
+      });
+      return () => unsub();
+    }
+  }, [selectedOwnerId]);
 
   const getDynamicPriceRule = (ownerId: string, startDateStr: string) => {
     if (!startDateStr || !priceRules || priceRules.length === 0) return null;
@@ -323,9 +365,11 @@ export default function CustomerView({
       
       const response = await onAddBooking({
         chaletId: "flexible",
-        chaletName: flexTerraceType === "ground" 
-          ? (lang === "ar" ? "طلب مرن: مسطبة أرضي 🏝️" : "Flexible: Ground Terrace Stay 🏝️") 
-          : (lang === "ar" ? "طلب مرن: مسطبة علوي 🌅" : "Flexible: Upper Terrace Stay 🌅"),
+        chaletName: flexBookingType === "timeshare" 
+          ? (lang === "ar" ? "حجز تايم شير 🗓️" : "Time-Share Booking 🗓️") 
+          : flexBookingType === "ownership"
+            ? (lang === "ar" ? "حجز تمليك 🏡" : "Ownership Booking 🏡")
+            : (lang === "ar" ? "حجز فندق 🏨" : "Hotel Booking 🏨"),
         ownerId: selectedOwnerId,
         customerName: flexName.trim(),
         customerPhone: flexPhone.trim(),
@@ -333,9 +377,11 @@ export default function CustomerView({
         startDate: flexStartDate,
         endDate: flexEndDate,
         isFlexible: true,
-        terraceType: flexTerraceType,
+        terraceType: flexBookingType,
         notes: flexNotes.trim(),
-        nightPrice: getNightlyRate(selectedOwnerId, flexStartDate, flexTerraceType)
+        nightPrice: selectedOwnerId === "all"
+          ? (flexBookingType === "timeshare" ? 1500 : flexBookingType === "ownership" ? 2000 : 3000)
+          : parseInt(selectedOwnerRates[flexBookingType] || "1500")
       } as any);
 
       if (response) {
@@ -348,20 +394,42 @@ export default function CustomerView({
     }
   };
 
+  const handleExitAndReset = () => {
+    setFlexName("");
+    setFlexPhone("");
+    setFlexStartDate("");
+    setFlexEndDate("");
+    setFlexNotes("");
+    setFlexPlacedBooking(null);
+    setFlexError("");
+    setSelectedOwnerId("all");
+    setFlexBookingType("timeshare");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleFlexWhatsappRelay = (booking: Booking) => {
     // Attempt to locate preferred owner's WhatsApp number, fallback to default admin
     const ownerProfile = owners?.find(o => o.uid === booking.ownerId);
     const targetPhone = ownerProfile?.phone || "+201021815155";
     const targetName = ownerProfile?.username || (lang === "ar" ? "إدارة بورتو" : "Porto Admin");
 
-    const terraceLabel = booking.terraceType === "ground" 
-      ? (lang === "ar" ? "مسطبة أرضي 🏝️" : "Ground Terrace 🏝️") 
-      : (lang === "ar" ? "مسطبة علوي 🌅" : "Upper Terrace 🌅");
+    const terraceLabel = booking.terraceType === "timeshare"
+      ? (lang === "ar" ? "حجز تايم شير 🗓️" : "Time-Share Booking 🗓️")
+      : booking.terraceType === "ownership"
+        ? (lang === "ar" ? "حجز تمليك 🏡" : "Ownership Booking 🏡")
+        : (lang === "ar" ? "حجز فندق 🏨" : "Hotel Booking 🏨");
     const urgentBonus = checkIsUrgent(booking.startDate) ? (lang === "ar" ? "\n⚠️ حجز عاجل (+300 ج لليلة مبرمجة تلقائياً)" : "\n⚠️ Urgent Booking (+300 EGP/night included)") : "";
     
+    const transferAr = selectedOwnerRates.walletNumber || selectedOwnerRates.instapayAddress 
+      ? `\n💳 *بيانات الحساب للتحويل فوري:*\n${selectedOwnerRates.walletNumber ? `• المحفظة الذكية: *${selectedOwnerRates.walletNumber}*\n` : ""}${selectedOwnerRates.instapayAddress ? `• عنوان انستا باي: *${selectedOwnerRates.instapayAddress}*` : ""}`
+      : "";
+    const transferEn = selectedOwnerRates.walletNumber || selectedOwnerRates.instapayAddress
+      ? `\n💳 *Payment & Transfer details:*\n${selectedOwnerRates.walletNumber ? `• Smart Wallet: *${selectedOwnerRates.walletNumber}*\n` : ""}${selectedOwnerRates.instapayAddress ? `• InstaPay IPN: *${selectedOwnerRates.instapayAddress}*` : ""}`
+      : "";
+
     const text = lang === "ar"
-      ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتأكيده:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفترة المطلوبة: فترة من *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• عدد الليالي: *${getDurationDays(booking.startDate, booking.endDate)}* ليلة\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n💰 *تفاصيل التسعير والتحويل:*\n• إجمالي السعر للفترة: *${booking.totalPrice > 0 ? `${booking.totalPrice} ج.م` : "حسب قواعد وأسعار المالك بالتوافق المباشر"}*\n\nيرجى تأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس إلى حسابكم!`
-      : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Complete parameters:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\n💰 *Pricing details:*\n• Total Calculated Price: *${booking.totalPrice > 0 ? `${booking.totalPrice} EGP` : "As coordinated with the owner directly"}*\n\nPlease respond to confirm my reservation and coordinate payment details!`;
+      ? `🚨 *طلب حجز مؤكد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز عبر الموقع لتأكيده وحجز التواريخ فورا:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• نوع وطريقة الحجز: *${terraceLabel}*\n• الفترة المطلوبة: فترة من *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• عدد الليالي: *${getDurationDays(booking.startDate, booking.endDate)}* ليلة\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n💰 *تفاصيل التسعير والتحويل:*\n• إجمالي السعر للفترة: *${booking.totalPrice > 0 ? `${booking.totalPrice} ج.م` : "حسب قواعد وأسعار المالك بالتوافق المباشر"}*${transferAr}\n\nيرجى تأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل العربون لتثبيت حمايتك في بورتو!`
+      : `🚨 *New Porto South Beach Booking* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a stay via Sokhna resort portal. Complete parameters:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Booking Type: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\n💰 *Pricing details:*\n• Total Calculated Price: *${booking.totalPrice > 0 ? `${booking.totalPrice} EGP` : "As coordinated with the owner directly"}*${transferEn}\n\nPlease respond to confirm my reservation and coordinate payment details!`;
 
     let cleanPhone = targetPhone.replace(/[\s\+\-\(\)]/g, "");
     if (cleanPhone.startsWith("00")) {
@@ -847,7 +915,13 @@ export default function CustomerView({
                   <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "👤 صاحب الـطلب:" : "👤 Client Name:"}</strong> {flexPlacedBooking.customerName}
                 </div>
                 <div>
-                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "🏡 نوع المسطبة:" : "🏡 Terrace Preference:"}</strong> {flexPlacedBooking.terraceType === "ground" ? (lang === "ar" ? "مسطبة أرضي 🏝️" : "Ground Terrace 🏝️") : (lang === "ar" ? "مسطبة علوي 🌅" : "Upper Terrace 🌅")}
+                  <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "📅 نوع وطريقة الحجز:" : "📅 Booking Type Category:"}</strong> {
+                    flexPlacedBooking.terraceType === "timeshare" 
+                    ? (lang === "ar" ? "تايم شير 🗓️" : "Time-Share 🗓️") 
+                    : flexPlacedBooking.terraceType === "ownership"
+                      ? (lang === "ar" ? "تمليك 🏡" : "Ownership 🏡")
+                      : (lang === "ar" ? "فندق 🏨" : "Hotel 🏨")
+                  }
                 </div>
                 <div>
                   <strong className="text-slate-800 dark:text-slate-200">{lang === "ar" ? "📆 التوقيت المفضل والمواعيد:" : "📆 Booking Period & Timing:"}</strong> {flexPlacedBooking.startDate} {lang === "ar" ? "إلى" : "to"} {flexPlacedBooking.endDate} ({flexPlacedBooking.notes || "لا توجد تفاصيل توقيت"})
@@ -863,18 +937,22 @@ export default function CustomerView({
               <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
                 <button
                   onClick={() => handleFlexWhatsappRelay(flexPlacedBooking)}
-                  className="bg-[#25D366] hover:bg-[#20ba59] active:scale-95 transition text-white font-extrabold py-3 px-6 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-green-100 dark:shadow-none"
+                  className="bg-[#25D366] hover:bg-[#20ba59] active:scale-95 transition text-white font-extrabold py-3 px-6 rounded-xl text-[11px] flex items-center justify-center gap-2 shadow-md shadow-green-100 dark:shadow-none cursor-pointer"
                 >
-                  <MessageSquare className="w-4 h-4 fill-white" />
+                  <MessageSquare className="w-4 h-4 fill-white animate-pulse" />
                   {lang === "ar" ? "💬 تفعيل وتأكيد الحجز فوراً عبر الواتساب" : "💬 Secure instantly on WhatsApp"}
                 </button>
                 <button
-                  onClick={() => {
-                    setFlexPlacedBooking(null);
-                  }}
-                  className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3 px-6 rounded-xl text-xs transition"
+                  onClick={handleExitAndReset}
+                  className="bg-primary/10 hover:bg-primary/20 text-primary font-extrabold py-3 px-6 rounded-xl text-[11px] transition cursor-pointer"
                 >
-                  {lang === "ar" ? "🏡 حجز طلب إقامة جديد" : "🏡 Book Another Request"}
+                  🏡 {lang === "ar" ? "الرجوع للصفحة الرئيسية والخروج" : "Return to Homepage & Exit"}
+                </button>
+                <button
+                  onClick={handleExitAndReset}
+                  className="bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-black py-3 px-6 rounded-xl text-[11px] transition cursor-pointer"
+                >
+                  ✨ {lang === "ar" ? "حجز طلب إقامة جديد" : "Book Another Request"}
                 </button>
               </div>
             </div>
@@ -1005,20 +1083,22 @@ export default function CustomerView({
 
                   <div>
                     <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                      🏡 {lang === "ar" ? "نوع مسطبة الشاليه المطلوبة:" : "Terrace preference Level:"}
+                      📅 {lang === "ar" ? "نوع وطريقة الحجز المطلوبة في ساوث بيتش:" : "Required Porto South Beach Booking Type:"}
                     </label>
                     <select
-                      value={flexTerraceType}
-                      onChange={(e) => setFlexTerraceType(e.target.value as any)}
+                      value={flexBookingType}
+                      onChange={(e) => setFlexBookingType(e.target.value as any)}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-xs focus:ring-1 focus:ring-primary focus:outline-none transition"
                     >
-                      <option value="ground">
-                        🏝️ {lang === "ar" ? "مسطبة أرضي" : "Ground Terrace"}{" "}
-                        ({lang === "ar" ? "سعر الليلة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "ground") !== null ? `${getNightlyRate(selectedOwnerId, flexStartDate, "ground")} ج.م` : (lang === "ar" ? "يحدده المالك لاحقاً" : "As negotiated with Owner")})
+                      <option value="timeshare">
+                        🗓️ {lang === "ar" ? "حجز تايم شير" : "Time-Share Booking"} ({selectedOwnerRates.timeshare} {lang === "ar" ? "ج.م / ليلة" : "EGP / night"})
+
                       </option>
-                      <option value="upper">
-                        🌅 {lang === "ar" ? "مسطبة علوي" : "Upper Terrace"}{" "}
-                        ({lang === "ar" ? "سعر الليلة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "upper") !== null ? `${getNightlyRate(selectedOwnerId, flexStartDate, "upper")} ج.م` : (lang === "ar" ? "يحدده المالك لاحقاً" : "As negotiated with Owner")})
+                      <option value="ownership">
+                        🏡 {lang === "ar" ? "حجز تمليك" : "Ownership Booking"} ({selectedOwnerRates.ownership} {lang === "ar" ? "ج.م / ليلة" : "EGP / night"})
+                      </option>
+                      <option value="hotel">
+                        🏨 {lang === "ar" ? "حجز فندق" : "Hotel Booking"} ({selectedOwnerRates.hotel} {lang === "ar" ? "ج.م / ليلة" : "EGP / night"})
                       </option>
                     </select>
                   </div>
@@ -1048,7 +1128,9 @@ export default function CustomerView({
                       (() => {
                         const days = getDurationDays(flexStartDate, flexEndDate);
                         const isUrgent = checkIsUrgent(flexStartDate);
-                        const basePrice = getNightlyRate(selectedOwnerId, flexStartDate, flexTerraceType);
+                        const basePrice = selectedOwnerId === "all"
+                          ? (flexBookingType === "timeshare" ? 1500 : flexBookingType === "ownership" ? 2000 : 3000)
+                          : parseInt(selectedOwnerRates[flexBookingType] || "1500");
                         const selectedOwner = combinedOwners.find(o => o.uid === selectedOwnerId);
 
                         if (basePrice === null) {
@@ -1639,28 +1721,43 @@ export default function CustomerView({
                     </div>
 
                     {/* WhatsApp notification action trigger */}
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <button
                         onClick={() => handleWhatsappRelay(placedBooking)}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow-lg flex items-center justify-center gap-2 text-sm"
+                        className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-extrabold py-3.5 rounded-xl transition shadow-lg flex items-center justify-center gap-2 text-xs md:text-sm cursor-pointer"
                       >
-                        <MessageSquare className="w-4 h-4" />
+                        <MessageSquare className="w-4 h-4 fill-white animate-pulse" />
                         {t.whatsappNotify}
                       </button>
-                      <p className="text-[10px] text-slate-400 font-medium">
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedChalet(null);
+                            setPlacedBooking(null);
+                            setCustomerTab("catalog");
+                          }}
+                          className="flex-1 bg-primary/10 hover:bg-primary/20 text-primary font-black py-2.5 rounded-xl text-xs transition cursor-pointer"
+                        >
+                          🏡 {lang === "ar" ? "العودة للرئيسية وخروج" : "Back to Home & Exit"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedChalet(null);
+                            setPlacedBooking(null);
+                          }}
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                        >
+                          ✨ {lang === "ar" ? "حجز شاليه آخر" : "Book Another Chalet"}
+                        </button>
+                      </div>
+
+                      <p className="text-[10px] text-slate-400 font-medium font-bold block pt-1.5 border-t border-dashed border-slate-100 dark:border-slate-800">
                         {t.whatsappTip}
                       </p>
                     </div>
-
-                    <button
-                      onClick={() => {
-                        setSelectedChalet(null);
-                        setPlacedBooking(null);
-                      }}
-                      className="text-xs font-bold text-slate-400 hover:text-slate-600 underline cursor-pointer"
-                    >
-                      {lang === "ar" ? "استكمال التصفح" : "Continue browsing"}
-                    </button>
                   </div>
                 )}
               </div>

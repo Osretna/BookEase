@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Building, Calendar, Plus, Save, Phone, MapPin, 
   Trash2, Edit3, DollarSign, Bed, Bath, Image as ImageIcon, MessageSquare, Check, X 
 } from "lucide-react";
 import { Chalet, Booking, PriceRule } from "../types";
 import { translations } from "../translations";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
 
 interface OwnerDashboardProps {
   lang: "ar" | "en";
@@ -52,6 +54,77 @@ export default function OwnerDashboard({
   const [instapayAddress, setInstapayAddress] = useState("");
   const [walletNumber, setWalletNumber] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // States for predefined prices of Time-share, Ownership, Hotel and wallet info stored in firestore
+  const [ownerRates, setOwnerRates] = useState<{
+    timeshare: number;
+    ownership: number;
+    hotel: number;
+    instapayAddress?: string;
+    walletNumber?: string;
+  }>({
+    timeshare: 1500,
+    ownership: 2000,
+    hotel: 3000,
+    instapayAddress: "",
+    walletNumber: ""
+  });
+
+  const [ratesForm, setRatesForm] = useState({
+    timeshare: "1500",
+    ownership: "2000",
+    hotel: "3000",
+    instapayAddress: "",
+    walletNumber: ""
+  });
+
+  useEffect(() => {
+    if (!currentOwnerId) return;
+    const unsub = onSnapshot(doc(db, "owner_rates", currentOwnerId), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        const loaded = {
+          timeshare: Number(data.timeshare) || 1500,
+          ownership: Number(data.ownership) || 2000,
+          hotel: Number(data.hotel) || 3000,
+          instapayAddress: data.instapayAddress || "",
+          walletNumber: data.walletNumber || ""
+        };
+        setOwnerRates(loaded);
+        setRatesForm({
+          timeshare: String(loaded.timeshare),
+          ownership: String(loaded.ownership),
+          hotel: String(loaded.hotel),
+          instapayAddress: loaded.instapayAddress,
+          walletNumber: loaded.walletNumber
+        });
+      }
+    }, (error) => {
+      console.warn("Error listening to owner rates:", error);
+    });
+    return () => unsub();
+  }, [currentOwnerId]);
+
+  const handleSaveRates = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const payload = {
+        timeshare: Number(ratesForm.timeshare) || 1500,
+        ownership: Number(ratesForm.ownership) || 2000,
+        hotel: Number(ratesForm.hotel) || 3000,
+        instapayAddress: ratesForm.instapayAddress.trim(),
+        walletNumber: ratesForm.walletNumber.trim()
+      };
+      await setDoc(doc(db, "owner_rates", currentOwnerId), payload);
+      alert(lang === "ar" ? "🎉 تم حفظ وتعديل أسعار وبيانات الحجوزات المعتمدة بنجاح!" : "🎉 Predefined booking rates and payment credentials saved successfully!");
+    } catch (err) {
+      console.error("Failed to save owner rates:", err);
+      alert(lang === "ar" ? "حدث خطأ أثناء حفظ الإعدادات" : "Failed to save settings");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Flexible booking custom claim states
   const [claimingBooking, setClaimingBooking] = useState<Booking | null>(null);
@@ -139,7 +212,7 @@ export default function OwnerDashboard({
   // Filter listed items belonging to logged in owner
   const myChalets = chalets.filter(c => c.ownerId === currentOwnerId);
   const myChaletIds = myChalets.map(c => c.id);
-  const myBookings = bookings.filter(b => myChaletIds.includes(b.chaletId));
+  const myBookings = bookings.filter(b => b.ownerId === currentOwnerId || myChaletIds.includes(b.chaletId));
 
   const handleCreateChalet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,12 +308,18 @@ export default function OwnerDashboard({
     e.preventDefault();
     if (!claimingBooking || !onUpdateBooking) return;
     if (!claimChaletId || !claimPricePerNight) {
-      alert(lang === "ar" ? "برجاء اختيار الشاليه وتحديد سعر الليلة!" : "Please select a chalet and specify a nightly price!");
+      alert(lang === "ar" ? "برجاء اختيار نوع الحجز وتحديد سعر الليلة!" : "Please select a booking type and specify a nightly price!");
       return;
     }
 
-    const targetChalet = chalets.find(c => c.id === claimChaletId);
-    if (!targetChalet) return;
+    const categoryNames: Record<string, { ar: string; en: string }> = {
+      timeshare: { ar: "حجز تايم شير", en: "Time-Share Booking" },
+      ownership: { ar: "حجز تمليك", en: "Ownership Booking" },
+      hotel: { ar: "حجز فندق", en: "Hotel Booking" }
+    };
+
+    const nameObj = categoryNames[claimChaletId] || { ar: "حجز مخصص", en: "Custom Booking" };
+    const finalChaletName = lang === "ar" ? nameObj.ar : nameObj.en;
 
     // Calculate nights
     const diffTime = Math.abs(new Date(claimingBooking.endDate).getTime() - new Date(claimingBooking.startDate).getTime());
@@ -250,8 +329,8 @@ export default function OwnerDashboard({
     setLoading(true);
     try {
       await onUpdateBooking(claimingBooking.id, {
-        chaletId: targetChalet.id,
-        chaletName: targetChalet.name,
+        chaletId: claimChaletId,
+        chaletName: finalChaletName,
         ownerId: currentOwnerId,
         nightPrice: Number(claimPricePerNight),
         totalPrice: finalTotal,
@@ -260,7 +339,7 @@ export default function OwnerDashboard({
       setClaimingBooking(null);
       setClaimChaletId("");
       setClaimPricePerNight("");
-      alert(lang === "ar" ? "🎉 تم حجز واعتماد وتسعير الطلب المرن وإضافته لشاليهك بنجاح!" : "🎉 Booking assigned to your chalet & priced successfully!");
+      alert(lang === "ar" ? "🎉 تم اعتماد رغبة الإقامة وتسعيرها بنجاح!" : "🎉 Stay demand confirmed and priced successfully!");
     } catch (err) {
       console.error(err);
     } finally {
@@ -469,16 +548,19 @@ export default function OwnerDashboard({
   const handleWhatsappNotification = (booking: Booking) => {
     // Find the chalet details to get the custom wallet or instapay address stored for this chalet
     const chalet = chalets.find(c => c.id === booking.chaletId);
-    const walletInfoAr = chalet?.walletNumber ? `\n📱 للدفع عبر محفظة كاش (فودافون كاش، إلخ) على الرقم: ${chalet.walletNumber}` : "";
-    const instapayInfoAr = chalet?.instapayAddress ? `\n⚡ أو التحويل الفوري عبر انستا باي (InstaPay IPN): ${chalet.instapayAddress}` : "";
+    const finalWallet = ownerRates.walletNumber || chalet?.walletNumber || "";
+    const finalInstapay = ownerRates.instapayAddress || chalet?.instapayAddress || "";
+
+    const walletInfoAr = finalWallet ? `\n📱 للدفع عبر محفظة كاش (فودافون كاش، إلخ) على الرقم: ${finalWallet}` : "";
+    const instapayInfoAr = finalInstapay ? `\n⚡ أو التحويل الفوري عبر انستا باي (InstaPay IPN): ${finalInstapay}` : "";
     
-    const walletInfoEn = chalet?.walletNumber ? `\n📱 Send payment to Mobile Wallet Cash: ${chalet.walletNumber}` : "";
-    const instapayInfoEn = chalet?.instapayAddress ? `\n⚡ Or via InstaPay IPN: ${chalet.instapayAddress}` : "";
+    const walletInfoEn = finalWallet ? `\n📱 Send payment to Mobile Wallet Cash: ${finalWallet}` : "";
+    const instapayInfoEn = finalInstapay ? `\n⚡ Or via InstaPay IPN: ${finalInstapay}` : "";
 
     // Generate lovely bilingual preset message
     const text = lang === "ar"
-      ? `مرحباً ${booking.customerName}، يسعدنا إعلامك بأنه تم تأكيد حجزك لشاليه (${booking.chaletName}) في بورتو ساوث بيتش السخنة للفترة من ${booking.startDate} إلى ${booking.endDate}.\n\n💰 إجمالي المبلغ المطلوب: ${booking.totalPrice} جنية.\n${walletInfoAr}${instapayInfoAr}\n\nيرجى تحويل المبلغ وتأكيد الدفع للاستلام. نتمنى لك إقامة سعيدة! 🌴☀️`
-      : `Dear ${booking.customerName}, we are pleased to confirm your booking for Chalet (${booking.chaletName}) at Porto South Beach Sokhna from ${booking.startDate} to ${booking.endDate}.\n\n💰 Total Price: EGP ${booking.totalPrice}.\n${walletInfoEn}${instapayInfoEn}\n\nPlease transfer style and confirm your payment. Have a great summer stay! 🌴☀️`;
+      ? `مرحباً ${booking.customerName}، يسعدنا إعلامك بأنه تم تأكيد حجزك لـ (${booking.chaletName}) في بورتو ساوث بيتش السخنة للفترة من ${booking.startDate} إلى ${booking.endDate}.\n\n💰 إجمالي المبلغ المطلوب: ${booking.totalPrice} جنية.\n${walletInfoAr}${instapayInfoAr}\n\nيرجى تحويل المبلغ وتأكيد الدفع للاستلام. نتمنى لك إقامة سعيدة! 🌴☀️`
+      : `Dear ${booking.customerName}, we are pleased to confirm your booking for (${booking.chaletName}) at Porto South Beach Sokhna from ${booking.startDate} to ${booking.endDate}.\n\n💰 Total Price: EGP ${booking.totalPrice}.\n${walletInfoEn}${instapayInfoEn}\n\nPlease transfer style and confirm your payment. Have a great summer stay! 🌴☀️`;
     
     let cleanPhone = booking.customerPhone.replace(/[\s\+\-\(\)]/g, "");
     if (cleanPhone.startsWith("00")) {
@@ -515,35 +597,15 @@ export default function OwnerDashboard({
         <div className="flex flex-wrap items-center gap-2">
           
           {/* Export template / data button */}
-          <button
-            onClick={handleExportCSV}
-            title={lang === "ar" ? "تحميل تمبليت الشاليهات أو تصدير الشاليهات الحالية لملف إكسل" : "Download chalet templates or export current chalets to Excel"}
-            className="border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
-          >
-            <Save className="w-3.5 h-3.5 text-primary" />
-            {lang === "ar" ? "تصدير الملف (Template / Export)" : "Excel (Template/Export)"}
-          </button>
+
 
           {/* Import to Excel button wrapper */}
-          <label className="border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer relative">
-            <Plus className="w-3.5 h-3.5 text-emerald-500" />
-            <span>{lang === "ar" ? "استيراد ورفع شاليهات (Import)" : "Import Chalets (CSV)"}</span>
-            <input
-              type="file"
-              accept=".csv"
-              disabled={loading}
-              onChange={handleImportCSVFile}
-              className="hidden"
-            />
-          </label>
+          <span className="inline-flex bg-teal-50 dark:bg-teal-950/40 text-teal-650 dark:text-teal-400 text-xs px-3 py-1.5 rounded-full font-black items-center gap-1.5 border border-teal-150/50">
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></span>
+            {lang === "ar" ? "نظام حجز ساوث بيتش المباشر نشط" : "Porto South Beach Live Booking Active"}
+          </span>
 
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="bg-primary hover:bg-[#ff7530] text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-md shadow-orange-100 dark:shadow-none flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            {t.addChalet}
-          </button>
+
         </div>
       </div>
 
@@ -1255,99 +1317,127 @@ export default function OwnerDashboard({
         </div>
       </div>
 
-      {/* List owner chalets */}
+      {/* Predefined Prices Setup Panel */}
       <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
         <div className="flex items-center gap-2 text-secondary dark:text-teal-400 mb-4 pb-2 border-b border-slate-100 dark:border-slate-800">
-          <Building className="w-5 h-5 text-primary" />
-          <h3 className="font-bold">{t.myChalets} ({myChalets.length})</h3>
+          <Save className="w-5 h-5 text-primary" />
+          <h3 className="font-bold">⚙️ {lang === "ar" ? "تحديد أسعار الحجوزات المعتمدة مسبقاً والتحويلات" : "Predefined Booking rates & payment settings"}</h3>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {myChalets.map((chalet) => (
-            <div key={chalet.id} className="border border-slate-150 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm bg-slate-50/50 dark:bg-slate-800/10 hover:shadow-md transition flex flex-col justify-between">
-              
-              <div className="relative h-44 w-full bg-slate-200">
-                <img
-                  src={chalet.images[0]}
-                  alt={chalet.name}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=800&fit=crop";
-                  }}
+        <form onSubmit={handleSaveRates} className="space-y-6 max-w-4xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Timeshare price */}
+            <div className="space-y-1.5 p-1 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-slate-100 dark:border-slate-850">
+              <label className="block text-xs font-black text-slate-500 p-2 pb-0">
+                🎫 {lang === "ar" ? "سعر ليلة التايم شير (ج.م):" : "Time-Share Nightly price (EGP):"}
+              </label>
+              <div className="relative p-2 pt-1">
+                <span className="absolute inset-y-0 left-5 flex items-center text-slate-400 font-bold text-xs">ج.م</span>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={ratesForm.timeshare}
+                  onChange={(e) => setRatesForm({...ratesForm, timeshare: e.target.value})}
+                  className="w-full px-4 py-3 pl-12 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 text-sm font-bold text-slate-800 dark:text-slate-100"
+                  placeholder="1500"
                 />
-                <span className="absolute top-3 right-3 bg-primary text-white font-bold text-xs px-2.5 py-1.5 rounded-full shadow-lg">
-                  {chalet.pricePerNight} {lang === "ar" ? "جنية" : "EGP"}
-                </span>
               </div>
-
-              <div className="p-4 space-y-2 flex-grow">
-                <h4 className="font-bold text-slate-800 dark:text-slate-100 text-md truncate">{chalet.name}</h4>
-                <p className="text-xs text-slate-500 line-clamp-3 leading-relaxed h-12 overflow-hidden">{chalet.description}</p>
-                
-                <div className="flex items-center gap-3 text-xs text-slate-500 pt-2 border-t border-slate-155/50">
-                  <span className="flex items-center gap-1">
-                    <Bed className="w-3.5 h-3.5 text-primary" />
-                    {chalet.roomsCount} {t.rooms}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Bath className="w-3.5 h-3.5 text-primary" />
-                    {chalet.bathroomsCount} {t.bathrooms}
-                  </span>
-                </div>
-              </div>
-
-              {/* Action buttons (Manual editing is triggered from here!) */}
-              <div className="p-4 bg-slate-50/85 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <a
-                  href={chalet.locationLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-secondary hover:text-secondary/90 font-bold flex items-center gap-1"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-primary" />
-                  {lang === "ar" ? "الخريطة" : "Location"}
-                </a>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setEditingChalet(chalet);
-                      setEditName(chalet.name);
-                      setEditDescription(chalet.description || "");
-                      setEditPricePerNight(chalet.pricePerNight.toString());
-                      setEditRoomsCount(chalet.roomsCount.toString());
-                      setEditBathroomsCount(chalet.bathroomsCount.toString());
-                      setEditLocationLink(chalet.locationLink || "");
-                      setEditImageLinks(chalet.images && chalet.images.length > 0 ? chalet.images : [""]);
-                      setEditInstapayAddress(chalet.instapayAddress || "");
-                      setEditWalletNumber(chalet.walletNumber || "");
-                    }}
-                    className="text-amber-500 hover:text-amber-600 text-xs font-bold flex items-center gap-1"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    {lang === "ar" ? "تعديل" : "Edit"}
-                  </button>
-
-                  <button
-                    onClick={() => onDeleteChalet(chalet.id)}
-                    className="text-red-500 hover:text-red-600 text-xs font-bold flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    {t.delete}
-                  </button>
-                </div>
-              </div>
-
+              <span className="text-[10px] text-slate-400 p-2 pt-0 block">
+                {lang === "ar" ? "قيمة حجز التايم شير الافتراضي" : "Default price for Time-share bookings"}
+              </span>
             </div>
-          ))}
 
-          {myChalets.length === 0 && (
-            <div className="col-span-full py-12 text-center text-slate-400 text-xs">
-              {t.emptyChalets}
+            {/* Ownership price */}
+            <div className="space-y-1.5 p-1 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-slate-100 dark:border-slate-850">
+              <label className="block text-xs font-black text-slate-500 p-2 pb-0">
+                🏡 {lang === "ar" ? "سعر ليلة التمليك (ج.م):" : "Ownership Nightly price (EGP):"}
+              </label>
+              <div className="relative p-2 pt-1">
+                <span className="absolute inset-y-0 left-5 flex items-center text-slate-400 font-bold text-xs">ج.م</span>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={ratesForm.ownership}
+                  onChange={(e) => setRatesForm({...ratesForm, ownership: e.target.value})}
+                  className="w-full px-4 py-3 pl-12 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 text-sm font-bold text-slate-800 dark:text-slate-100"
+                  placeholder="2000"
+                />
+              </div>
+              <span className="text-[10px] text-slate-400 p-2 pt-0 block">
+                {lang === "ar" ? "قيمة حجز تمليك الافتراضي" : "Default price for Ownership bookings"}
+              </span>
             </div>
-          )}
-        </div>
+
+            {/* Hotel price */}
+            <div className="space-y-1.5 p-1 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-slate-100 dark:border-slate-850">
+              <label className="block text-xs font-black text-slate-500 p-2 pb-0">
+                🏨 {lang === "ar" ? "سعر ليلة الفندق (ج.م):" : "Hotel Nightly price (EGP):"}
+              </label>
+              <div className="relative p-2 pt-1">
+                <span className="absolute inset-y-0 left-5 flex items-center text-slate-400 font-bold text-xs">ج.م</span>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={ratesForm.hotel}
+                  onChange={(e) => setRatesForm({...ratesForm, hotel: e.target.value})}
+                  className="w-full px-4 py-3 pl-12 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 text-sm font-bold text-slate-800 dark:text-slate-100"
+                  placeholder="3000"
+                />
+              </div>
+              <span className="text-[10px] text-slate-400 p-2 pt-0 block">
+                {lang === "ar" ? "قيمة حجز الفندق الافتراضي" : "Default price for Hotel bookings"}
+              </span>
+            </div>
+          </div>
+
+          <div className="border-t border-dashed border-slate-150 dark:border-slate-800 pt-6">
+            <h4 className="text-sm font-black text-secondary dark:text-white uppercase tracking-wider mb-4 flex items-center gap-1">
+              <span>💳</span> {lang === "ar" ? "بيانات الدفع والتحويلات لحسابك المباشر" : "Receiving Payments Credentials"}
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-extrabold text-slate-500 font-sans">
+                  📱 {lang === "ar" ? "رقم محفظة الجوال (فودافون كاش، اتصالات، إلخ):" : "Mobile Wallet Number:"}
+                </label>
+                <input
+                  type="text"
+                  value={ratesForm.walletNumber}
+                  onChange={(e) => setRatesForm({...ratesForm, walletNumber: e.target.value})}
+                  className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200"
+                  placeholder="e.g. 01002345678"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-extrabold text-slate-500 font-sans">
+                  ⚡ عنوان دفع انستا باي (InstaPay Address):
+                </label>
+                <input
+                  type="text"
+                  value={ratesForm.instapayAddress}
+                  onChange={(e) => setRatesForm({...ratesForm, instapayAddress: e.target.value})}
+                  className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 text-sm text-teal-650 dark:text-teal-400 font-bold"
+                  placeholder="e.g. name@instapay"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-primary hover:bg-[#ff7530] text-white font-extrabold px-8 py-3 rounded-xl text-xs transition shadow-md shadow-orange-100 dark:shadow-none flex items-center gap-2 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              {loading ? (lang === "ar" ? "جاري الحفظ..." : "Saving...") : (lang === "ar" ? "حفظ وتعديل الأسعار وإعداد الدفع 💾" : "Save Custom Rates & payment settings 💾")}
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Manual Chalet Customizer Popover overlay (Bilingual modal) */}

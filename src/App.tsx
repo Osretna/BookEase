@@ -25,6 +25,44 @@ export default function App() {
     return saved === "true";
   });
 
+  // PWA android installer states
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      // Double check display standalone
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+      if (!isStandalone) {
+        setIsInstallable(true);
+      }
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+
+    // Initial standalone status check
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+    if (isStandalone) {
+      setIsInstallable(false);
+    }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log("Install prompt choice:", outcome);
+    setDeferredPrompt(null);
+    setIsInstallable(false);
+  };
+
+
   // Authentication & Navigation
   const [currentUser, setCurrentUser] = useState<any>(() => {
     const saved = localStorage.getItem("sokhna_user");
@@ -414,6 +452,19 @@ export default function App() {
             {/* Quick Actions Controlboard */}
             <div className="flex items-center gap-1.5 sm:gap-2">
               
+              {/* Android PWA Install App Button */}
+              {isInstallable && deferredPrompt && (
+                <button
+                  type="button"
+                  onClick={handleInstallApp}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black px-2.5 py-1.5 rounded-xl transition text-[10px] flex items-center gap-1 shadow-md shadow-orange-500/10 cursor-pointer animate-pulse hover:animate-none shrink-0"
+                  id="pwa-install-app-btn"
+                >
+                  <span className="text-xs">📱</span>
+                  <span>{lang === "ar" ? "تثبيت التطبيق" : "Install App"}</span>
+                </button>
+              )}
+
               {/* English/Arabic Switcher */}
               <button
                 onClick={() => setLang(lang === "ar" ? "en" : "ar")}

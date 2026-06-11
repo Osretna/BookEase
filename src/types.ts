@@ -40,7 +40,7 @@ export interface Booking {
   createdAt?: string;
   updatedAt?: string;
   isFlexible?: boolean;
-  terraceType?: "ground" | "upper";
+  terraceType?: "ground" | "upper" | "timeshare" | "ownership" | "hotel";
   notes?: string;
   nightPrice?: number;
 }
