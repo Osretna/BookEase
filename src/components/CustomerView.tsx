@@ -14,6 +14,7 @@ interface CustomerViewProps {
   reviews: Review[];
   owners?: UserProfile[];
   priceRules?: PriceRule[];
+  galleryImages?: string[];
   onAddBooking: (booking: Omit<Booking, "id" | "status" | "totalPrice">) => Promise<Booking | null>;
   onAddReview: (review: Omit<Review, "id" | "createdAt">) => Promise<void>;
 }
@@ -25,11 +26,13 @@ export default function CustomerView({
   reviews,
   owners,
   priceRules = [],
+  galleryImages = [],
   onAddBooking,
   onAddReview
 }: CustomerViewProps) {
   const [selectedChalet, setSelectedChalet] = useState<Chalet | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [activeAlbumIdx, setActiveAlbumIdx] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerLocation, setCustomerLocation] = useState("");
@@ -99,11 +102,12 @@ export default function CustomerView({
   };
 
   const getNightlyRate = (ownerId: string, startDateStr: string, terraceType: "ground" | "upper") => {
+    if (!startDateStr || !ownerId) return null;
     const activeRule = getDynamicPriceRule(ownerId, startDateStr);
     if (activeRule) {
       return terraceType === "ground" ? activeRule.groundPrice : activeRule.upperPrice;
     }
-    return terraceType === "ground" ? 1500 : 1800;
+    return null;
   };
 
   const checkIsUrgent = (dateStr: string) => {
@@ -356,8 +360,8 @@ export default function CustomerView({
     const urgentBonus = checkIsUrgent(booking.startDate) ? (lang === "ar" ? "\n⚠️ حجز عاجل (+300 ج لليلة مبرمجة تلقائياً)" : "\n⚠️ Urgent Booking (+300 EGP/night included)") : "";
     
     const text = lang === "ar"
-      ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتأكيده:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفترة المطلوبة: فترة من *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• عدد الليالي: *${getDurationDays(booking.startDate, booking.endDate)}* ليلة\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n💰 *تفاصيل التسعير والتحويل:*\n• إجمالي السعر المحسوب حسب فترتك المحددة: *${booking.totalPrice}* ج.م\n\nيرجى تأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس إلى حسابكم!`
-      : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Complete parameters:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\n💰 *Pricing details:*\n• Total Calculated Price: *${booking.totalPrice}* EGP\n\nPlease respond to confirm my reservation and coordinate payment details!`;
+      ? `🚨 *طلب حجز مرن جديد - بورتو ساوث بيتش* 🏝️\n\nعزيزي المالك: *${targetName}* 👨‍💼\nلقد أرسلت طلب حجز مرن عبر الموقع لتقوم بتحديده لي وتأكيده:\n\n👤 *بيانات النزيل:*\n• الاسم: *${booking.customerName}*\n• الهاتف: *${booking.customerPhone}*\n• الموقع والمحافظة: *${booking.customerLocation}*\n\n🏡 *تفاصيل الحجز المطلوبة:*\n• فئة التواجد: *${terraceLabel}*\n• الفترة المطلوبة: فترة من *${booking.startDate}* إلى *${booking.endDate}*${urgentBonus}\n• عدد الليالي: *${getDurationDays(booking.startDate, booking.endDate)}* ليلة\n• رغبات خاصة وأوقات مفضلة: *${booking.notes || "لا يوجد"}*\n\n💰 *تفاصيل التسعير والتحويل:*\n• إجمالي السعر للفترة: *${booking.totalPrice > 0 ? `${booking.totalPrice} ج.م` : "حسب قواعد وأسعار المالك بالتوافق المباشر"}*\n\nيرجى تأكيد موافقتك معي عبر الواتساب لتأكيد الحجز وتحويل الفلوس إلى حسابكم!`
+      : `🚨 *New Flexible Booking Request - Porto South Beach* 🏝️\n\nDear Owner: *${targetName}* 👨‍💼\nI have requested a flexible stay via Sokhna resort portal. Complete parameters:\n\n👤 *Guest Details:*\n• Name: *${booking.customerName}*\n• Phone: *${booking.customerPhone}*\n• Location: *${booking.customerLocation}*\n\n🏡 *Requested Stay Parameters:*\n• Category: *${terraceLabel}*\n• Dates: *${booking.startDate}* to *${booking.endDate}*${urgentBonus}\n• Duration: *${getDurationDays(booking.startDate, booking.endDate)}* nights\n• Custom Prefs/Notes: *${booking.notes || "None"}*\n\n💰 *Pricing details:*\n• Total Calculated Price: *${booking.totalPrice > 0 ? `${booking.totalPrice} EGP` : "As coordinated with the owner directly"}*\n\nPlease respond to confirm my reservation and coordinate payment details!`;
 
     let cleanPhone = targetPhone.replace(/[\s\+\-\(\)]/g, "");
     if (cleanPhone.startsWith("00")) {
@@ -421,6 +425,184 @@ export default function CustomerView({
             : "Rent directly with Porto South Beach chalet owners at custom periodic rates to bypass fees. Select your preferred owner & dates!"}
         </p>
       </div>
+
+      {/* Dynamic Resort & Pools Photo Gallery (Bento-style album for premium look) */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-6 rounded-3xl shadow-sm space-y-4 animate-fade-in relative">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-dashed border-slate-200/60 dark:border-slate-800 pb-3">
+          <div className="space-y-1 text-right rtl:text-right">
+            <span className="inline-flex bg-primary/10 text-primary text-[10px] px-2.5 py-1 rounded-full font-black uppercase">
+              {lang === "ar" ? "📸 ألبوم صور وجمال المنتجع" : "📸 Live Resort Album"}
+            </span>
+            <h3 className="font-extrabold text-sm sm:text-base text-clean-dark dark:text-slate-100 flex items-center gap-2">
+              <span>🏖️</span>
+              {lang === "ar" ? "معرض صور وجمال منتجع بورتو ساوث بيتش السخنة:" : "Resort Pools & Beach Luxury Photo Album:"}
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              {lang === "ar" 
+                ? "تصفح روعة الشواطئ الرملية، المساحات اللاندسكيب، حمامات السباحة ومطاعم السخنة مباشرة قبل تأكيد الحجز!" 
+                : "Browse full high-fidelity views of our pools, sandy coastlines, and entertainment facilities!"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveAlbumIdx(0)}
+            className="self-start text-[11px] font-black bg-primary/10 hover:bg-primary/25 text-primary px-4 py-2 rounded-xl transition cursor-pointer"
+          >
+            📸 {lang === "ar" ? "عرض شرائح كامل الشاشة" : "Interactive Slideshow"}
+          </button>
+        </div>
+
+        {/* Bento Image Layout */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {(() => {
+            const finalGallery = galleryImages && galleryImages.length > 0 ? galleryImages : [
+              "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1200&fit=crop",
+              "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&fit=crop",
+              "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=1200&fit=crop",
+              "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&fit=crop",
+              "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&fit=crop",
+              "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1200&fit=crop"
+            ];
+
+            return finalGallery.slice(0, 4).map((imgUrl, idx) => {
+              const isLast = idx === 3 && finalGallery.length > 4;
+              return (
+                <div
+                  key={idx}
+                  onClick={() => setActiveAlbumIdx(idx)}
+                  className="relative h-28 sm:h-36 rounded-2xl overflow-hidden cursor-pointer group border border-slate-100 dark:border-slate-850 bg-slate-100 dark:bg-slate-800"
+                >
+                  <img
+                    src={imgUrl}
+                    alt="Resort album view"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition-colors"></div>
+                  {isLast ? (
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center text-white text-center p-2">
+                      <span className="font-black text-sm">+{finalGallery.length - 3}</span>
+                      <span className="text-[9px] font-bold leading-none tracking-tight">
+                        {lang === "ar" ? "صورة إضافية" : "More Photos"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-sm px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[9px] text-white font-bold">🔍 {lang === "ar" ? "تكبير" : "Zoom"}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </div>
+
+      {/* Elegant Slideshow Lightbox Modal (Full Screen with Thumbnails) */}
+      {activeAlbumIdx !== null && (
+        (() => {
+          const finalGallery = galleryImages && galleryImages.length > 0 ? galleryImages : [
+            "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1200&fit=crop",
+            "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&fit=crop",
+            "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=1200&fit=crop",
+            "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&fit=crop",
+            "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&fit=crop",
+            "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1200&fit=crop"
+          ];
+
+          const handlePrev = (e: React.MouseEvent) => {
+            e.stopPropagation();
+            setActiveAlbumIdx((prev) => (prev !== null ? (prev === 0 ? finalGallery.length - 1 : prev - 1) : 0));
+          };
+
+          const handleNext = (e: React.MouseEvent) => {
+            e.stopPropagation();
+            setActiveAlbumIdx((prev) => (prev !== null ? (prev === finalGallery.length - 1 ? 0 : prev + 1) : 0));
+          };
+
+          return (
+            <div
+              className="fixed inset-0 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 z-50 animate-fade-in"
+              onClick={() => setActiveAlbumIdx(null)}
+            >
+              {/* Top Navigation Strip */}
+              <div className="w-full flex justify-between items-center text-white pb-2 max-w-5xl border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black">📸 {lang === "ar" ? "معرض صور بورتو ساوث بيتش السخنة" : "Porto South Beach Live Gallery"}</span>
+                  <span className="bg-white/10 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                    {activeAlbumIdx + 1} / {finalGallery.length}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveAlbumIdx(null)}
+                  className="bg-white/15 hover:bg-white/25 transition p-2 rounded-full cursor-pointer focus:outline-none text-xl w-9 h-9 flex items-center justify-center font-bold"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Main Expanded Image Section & Slider Controls */}
+              <div className="relative w-full max-w-4xl flex-1 flex items-center justify-center py-4 my-auto select-none">
+                {/* Prev Trigger */}
+                <button
+                  type="button"
+                  onClick={handlePrev}
+                  className="absolute left-2 md:-left-8 bg-black/40 hover:bg-black/60 text-white p-3 rounded-full transition cursor-pointer z-10 focus:outline-none flex items-center justify-center min-w-[44px] min-h-[44px]"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+
+                {/* Display Image */}
+                <div className="w-full max-h-[60vh] md:max-h-[70vh] flex items-center justify-center rounded-2xl overflow-hidden shadow-2xl relative bg-slate-900 border border-white/5">
+                  <img
+                    src={finalGallery[activeAlbumIdx]}
+                    alt="Expanded resort beauty shot"
+                    referrerPolicy="no-referrer"
+                    className="max-w-full max-h-[60vh] md:max-h-[70vh] object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+
+                {/* Next Trigger */}
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="absolute right-2 md:-right-8 bg-black/40 hover:bg-black/60 text-white p-3 rounded-full transition cursor-pointer z-10 focus:outline-none flex items-center justify-center min-w-[44px] min-h-[44px]"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Bottom Thumbnail Selector Bar */}
+              <div className="w-full overflow-x-auto py-3 max-w-3xl shrink-0 border-t border-white/10 select-none">
+                <div className="flex justify-center gap-2.5 px-4">
+                  {finalGallery.map((imgUrl, idx) => (
+                    <button
+                      type="button"
+                      key={idx}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveAlbumIdx(idx);
+                      }}
+                      className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 transition shrink-0 cursor-pointer ${
+                        idx === activeAlbumIdx ? "border-primary scale-105 shadow-md animate-pulse" : "border-transparent opacity-60 hover:opacity-100"
+                      }`}
+                    >
+                      <img
+                        src={imgUrl}
+                        alt="Thumbnail preview"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      )}
 
       {customerTab === "catalog" && false ? (
         <div className="space-y-8 animate-fade-in">
@@ -832,11 +1014,11 @@ export default function CustomerView({
                     >
                       <option value="ground">
                         🏝️ {lang === "ar" ? "مسطبة أرضي" : "Ground Terrace"}{" "}
-                        ({lang === "ar" ? "سعر الليلة للفترة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "ground")} ج.م)
+                        ({lang === "ar" ? "سعر الليلة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "ground") !== null ? `${getNightlyRate(selectedOwnerId, flexStartDate, "ground")} ج.م` : (lang === "ar" ? "يحدده المالك لاحقاً" : "As negotiated with Owner")})
                       </option>
                       <option value="upper">
                         🌅 {lang === "ar" ? "مسطبة علوي" : "Upper Terrace"}{" "}
-                        ({lang === "ar" ? "سعر الليلة للفترة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "upper")} ج.م)
+                        ({lang === "ar" ? "سعر الليلة:" : "Night Rate:"} {getNightlyRate(selectedOwnerId, flexStartDate, "upper") !== null ? `${getNightlyRate(selectedOwnerId, flexStartDate, "upper")} ج.م` : (lang === "ar" ? "يحدده المالك لاحقاً" : "As negotiated with Owner")})
                       </option>
                     </select>
                   </div>
@@ -867,6 +1049,52 @@ export default function CustomerView({
                         const days = getDurationDays(flexStartDate, flexEndDate);
                         const isUrgent = checkIsUrgent(flexStartDate);
                         const basePrice = getNightlyRate(selectedOwnerId, flexStartDate, flexTerraceType);
+                        const selectedOwner = combinedOwners.find(o => o.uid === selectedOwnerId);
+
+                        if (basePrice === null) {
+                          return (
+                            <div className="space-y-4 text-xs">
+                              <div className="bg-amber-500/5 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 p-4 rounded-2xl border border-amber-500/10 leading-relaxed space-y-2">
+                                <div className="font-extrabold flex items-center gap-1.5 text-xs text-amber-500">
+                                  <span>⚠️</span>
+                                  <span>{lang === "ar" ? "تنبيه هام بشأن التسعير والضمان" : "Notice on Dynamic Flat-Rates"}</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                  {lang === "ar"
+                                    ? `لم يقم صاحب الشاليه (${selectedOwner ? selectedOwner.username : "المختار"}) ببرمجة تسعير تلقائي مسبق للفترة المحددة في النظام لمنع تضارب الأسعار. سيتم إرسال طلبك كحجز مباشر معلق، وسيقوم المالك بالتواصل الفوري معك لتأكيد أفضل سعر مناسب للفترة والتحويل.`
+                                    : `The chalet owner (${selectedOwner ? selectedOwner.username : "selected"}) has not pre-defined a digital seasonal rate for these dates. Your booking request will be filed directly and the owner will manually coordinate the final rate and guarantee requirements with you.`}
+                                </p>
+                              </div>
+
+                              {selectedOwner && (
+                                <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 space-y-2.5">
+                                  <div className="text-xs font-black text-primary border-b border-primary/10 pb-1.5 flex items-center gap-1.5">
+                                    <span>👨‍💼</span>
+                                    <span>{lang === "ar" ? "بيانات المالك للتحقق والاتصال:" : "Owner verification details:"}</span>
+                                  </div>
+                                  <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                                    <div className="flex justify-between">
+                                      <span>{lang === "ar" ? "صاحب الشاليه:" : "Chalet Owner:"}</span>
+                                      <strong className="text-slate-800 dark:text-slate-100">{selectedOwner.username}</strong>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>{lang === "ar" ? "الهاتف / الواتساب الدولي:" : "Phone / WhatsApp:"}</span>
+                                      <strong className="text-slate-800 dark:text-slate-100">{selectedOwner.phone}</strong>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                                <span className="font-bold text-slate-500 dark:text-slate-400">{lang === "ar" ? "💵 الإجمالي التقديري:" : "💵 Total Estimated Rate:"}</span>
+                                <span className="text-xs font-black text-amber-500">
+                                  {lang === "ar" ? "حسب الاتفاق المباشر" : "Pending direct agreement"}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         const urgentAddon = isUrgent ? 300 : 0;
                         const finalRate = basePrice + urgentAddon;
                         const totalCost = days * finalRate;
@@ -879,20 +1107,20 @@ export default function CustomerView({
                               <span className="font-extrabold text-slate-800 dark:text-slate-200">{days} {lang === "ar" ? "ليلية" : "nights"}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span>{lang === "ar" ? "🏡 سعر الليلة الأساسي:" : "🏡 Base rate/night:"}</span>
+                              <span>{lang === "ar" ? "🏡 سعر الليلة المبرمج:" : "🏡 Predefined base rate/night:"}</span>
                               <span className="font-bold text-slate-800 dark:text-slate-200">{basePrice} {lang === "ar" ? "جنيه مصري" : "EGP"}</span>
                             </div>
 
                             {activeRule && (
                               <div className="bg-emerald-50 dark:bg-emerald-950/25 text-emerald-600 dark:text-emerald-400 p-3 rounded-xl flex flex-col gap-1 border border-emerald-250/20 text-[11px] font-black animate-fade-in text-right">
                                 <div className="flex justify-between">
-                                  <span>✨ {lang === "ar" ? "سعر المالك المخصص للفترة:" : "✨ Applied Owner Period Rate:"}</span>
-                                  <span>{lang === "ar" ? "نشط" : "Active"}</span>
+                                  <span>✨ {lang === "ar" ? "قاعدة سعر المالك النشطة:" : "✨ Applied Seasonal Owner Rule:"}</span>
+                                  <span>{lang === "ar" ? "مفعلة" : "Active"}</span>
                                 </div>
-                                <span className="text-[10px] text-emerald-500 font-medium">
+                                <span className="text-[10px] text-emerald-500 font-medium leading-relaxed">
                                   {lang === "ar"
-                                    ? `تم استخدام السعر المبرمج بواسطة المالك لهذا الشهر (الفترة من شهر ${activeRule.startMonth} إلى شهر ${activeRule.endMonth}).`
-                                    : `Using seasonal pricing rules configured by the owner for this month range (from month ${activeRule.startMonth} to ${activeRule.endMonth}).`}
+                                    ? `تم تفعيل سعر المالك المدخل يدوياً في النظام للفترة من شهر ${activeRule.startMonth} إلى شهر ${activeRule.endMonth}.`
+                                    : `Using custom price rate entered by owner for the seasonal window (from month ${activeRule.startMonth} to ${activeRule.endMonth}).`}
                                 </span>
                               </div>
                             )}
@@ -900,21 +1128,40 @@ export default function CustomerView({
                             {isUrgent && (
                               <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 p-3 rounded-xl flex flex-col gap-1 border border-amber-200/20 animate-fade-in">
                                 <div className="flex justify-between font-black text-[11px]">
-                                  <span>⚠️ {lang === "ar" ? "حجز عاجل (خلال أقل من 24 ساعة):" : "⚠️ Urgent Booking (< 24 hrs):"}</span>
+                                  <span>⚠️ {lang === "ar" ? "رسوم استعجال (أقل من 24 ليلة):" : "⚠️ Urgent Booking (< 24 hrs):"}</span>
                                   <span>+300 ج / ليلة</span>
                                 </div>
-                                <span className="text-[10px] text-amber-500/80">
+                                <span className="text-[10px] text-amber-500/80 leading-relaxed">
                                   {lang === "ar" 
-                                    ? "نظراً لأن ميعاد حجزك يبدأ خلال أقل من 24 ساعة، يتم إضافة 300 جنيه تلقائياً كرسوم استعجال على الليلة!" 
-                                    : "Because your stay is within less than 24 hours, EGP 300 is precalculated and added per night."}
+                                    ? "متبقي أقل من 24 ساعة على حجزك المباشر، لذا يتم تلقائياً إضافة 300 جنيه على الليلة كرسوم معالجة عاجلة!" 
+                                    : "Stay starts in less than 24 hours. EGP 300 added per night to facilitate immediate owner turn-around."}
                                 </span>
+                              </div>
+                            )}
+
+                            {selectedOwner && (
+                              <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 space-y-2.5 mt-2">
+                                <div className="text-xs font-black text-primary border-b border-primary/10 pb-1.5 flex items-center gap-1.5">
+                                  <span>👨‍💼</span>
+                                  <span>{lang === "ar" ? "بيانات المالك المعتمد للحجز:" : "Authorized Booking Owner Details:"}</span>
+                                </div>
+                                <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                                  <div className="flex justify-between">
+                                    <span>{lang === "ar" ? "صاحب الشاليه:" : "Chalet Owner:"}</span>
+                                    <strong className="text-slate-800 dark:text-slate-100">{selectedOwner.username}</strong>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>{lang === "ar" ? "الهاتف / الواتساب الدولي:" : "Phone / WhatsApp:"}</span>
+                                    <strong className="text-slate-800 dark:text-slate-100">{selectedOwner.phone}</strong>
+                                  </div>
+                                </div>
                               </div>
                             )}
 
                             <div className="h-px bg-slate-200 dark:bg-slate-800 my-2"></div>
                             
                             <div className="flex justify-between items-center bg-primary/5 p-3 rounded-2xl border border-primary/10">
-                              <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{lang === "ar" ? "💵 الإجمالي التقديري للفترة:" : "💵 Total Estimated Price:"}</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{lang === "ar" ? "💵 الإجمالي المحسوب للفترة:" : "💵 Total Calculated Cost:"}</span>
                               <span className="text-lg font-black text-primary">
                                 {totalCost} {lang === "ar" ? "جنيه مصري" : "EGP"}
                               </span>

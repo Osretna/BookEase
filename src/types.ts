@@ -59,6 +59,7 @@ export interface SiteConfig {
   siteName: string;
   logoUrl: string;
   backgroundImageUrl: string;
+  galleryImages?: string[];
 }
 
 export interface PriceRule {

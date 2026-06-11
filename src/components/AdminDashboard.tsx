@@ -30,12 +30,23 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
   const [siteName, setSiteName] = useState(activeConfig?.siteName || "");
   const [logoUrl, setLogoUrl] = useState(activeConfig?.logoUrl || "");
   const [backgroundImageUrl, setBackgroundImageUrl] = useState(activeConfig?.backgroundImageUrl || "");
+  const [galleryImages, setGalleryImages] = useState<string[]>(activeConfig?.galleryImages || []);
+  const [newImageLink, setNewImageLink] = useState("");
 
   const t = translations[lang];
 
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (activeConfig) {
+      setSiteName(activeConfig.siteName || "");
+      setLogoUrl(activeConfig.logoUrl || "");
+      setBackgroundImageUrl(activeConfig.backgroundImageUrl || "");
+      setGalleryImages(activeConfig.galleryImages || []);
+    }
+  }, [activeConfig]);
 
   const fetchUsers = async () => {
     try {
@@ -256,7 +267,8 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
       id: "site-config",
       siteName,
       logoUrl: logoUrl || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=100&h=100&fit=crop",
-      backgroundImageUrl: backgroundImageUrl || "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1600&fit=crop"
+      backgroundImageUrl: backgroundImageUrl || "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1600&fit=crop",
+      galleryImages
     };
 
     onUpdateConfig(updated);
@@ -559,6 +571,62 @@ export default function AdminDashboard({ lang, activeConfig, onUpdateConfig, boo
                   placeholder="https://..."
                 />
               </div>
+            </div>
+
+            {/* Gallery Images Section */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">
+                {lang === "ar" ? "📸 ألبوم صور وسياحة المنتجع (بورتو ساوث بيتش)" : "📸 Resort Tourism & Pools Album"}
+              </label>
+              
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newImageLink}
+                  onChange={(e) => setNewImageLink(e.target.value)}
+                  placeholder={lang === "ar" ? "ضع رابط الصورة هنا..." : "Paste image URL..."}
+                  className="flex-1 px-3 py-1.5 border border-gray-100 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newImageLink && newImageLink.trim().startsWith("http")) {
+                      setGalleryImages([...galleryImages, newImageLink.trim()]);
+                      setNewImageLink("");
+                    } else {
+                      alert(lang === "ar" ? "يرجى إدخال رابط صورة صحيح يبدأ بـ http" : "Please enter a valid image URL starting with http");
+                    }
+                  }}
+                  className="bg-primary hover:bg-[#ff7530] text-white px-3 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {lang === "ar" ? "إضافة" : "Add"}
+                </button>
+              </div>
+
+              {galleryImages.length > 0 ? (
+                <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto p-1.5 border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl">
+                  {galleryImages.map((img, i) => (
+                    <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800 bg-slate-100">
+                      <img src={img} alt="Resort gallery" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGalleryImages(galleryImages.filter((_, idx) => idx !== i));
+                        }}
+                        className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 transition flex items-center justify-center cursor-pointer"
+                        title={lang === "ar" ? "حذف الصورة" : "Delete photo"}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-400 italic">
+                  {lang === "ar" ? "لا توجد صور مخصصة حالياً، سيتم عرض الصور الافتراضية." : "No custom photos. Default ones will be loaded."}
+                </p>
+              )}
             </div>
 
             <button

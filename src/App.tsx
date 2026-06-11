@@ -47,7 +47,15 @@ export default function App() {
     id: "site-config",
     siteName: "بورتو ساوث بيتش السخنة 🏖️",
     logoUrl: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=200&h=200&fit=crop",
-    backgroundImageUrl: "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1600&fit=crop"
+    backgroundImageUrl: "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1600&fit=crop",
+    galleryImages: [
+      "https://images.unsplash.com/photo-1540553016722-983e48a2cd10?w=1200&fit=crop",
+      "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&fit=crop",
+      "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=1200&fit=crop",
+      "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&fit=crop",
+      "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&fit=crop",
+      "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1200&fit=crop"
+    ]
   });
 
   const t = translations[lang];
@@ -163,7 +171,7 @@ export default function App() {
 
     const getNightlyRate = (ownerId: string, startDateStr: string, terraceType: "ground" | "upper") => {
       if (!startDateStr || !priceRules || priceRules.length === 0) {
-        return terraceType === "ground" ? 1500 : 1800;
+        return null;
       }
       const date = new Date(startDateStr + "T00:00:00");
       const checkInMonth = date.getMonth() + 1; // 1-12
@@ -180,15 +188,19 @@ export default function App() {
       if (matchingRule) {
         return terraceType === "ground" ? matchingRule.groundPrice : matchingRule.upperPrice;
       }
-      return terraceType === "ground" ? 1500 : 1800;
+      return null;
     };
 
     let calculatedPrice = 0;
     
     if (bookingData.chaletId === "flexible") {
       const baseRate = getNightlyRate(bookingData.ownerId, bookingData.startDate, bookingData.terraceType || "ground");
-      const finalNightPrice = baseRate + penaltyAddon;
-      calculatedPrice = daysCount * finalNightPrice;
+      if (baseRate !== null) {
+        const finalNightPrice = baseRate + penaltyAddon;
+        calculatedPrice = daysCount * finalNightPrice;
+      } else {
+        calculatedPrice = 0; // Subject to owner's review, prevents clashes!
+      }
     } else {
       const targetChalet = chalets.find(c => c.id === bookingData.chaletId);
       if (!targetChalet) throw new Error("Chalet listing not found!");
@@ -571,6 +583,7 @@ export default function App() {
               reviews={reviews}
               owners={owners}
               priceRules={priceRules}
+              galleryImages={siteConfig.galleryImages}
               onAddBooking={handleAddBooking}
               onAddReview={handleAddReview}
             />
