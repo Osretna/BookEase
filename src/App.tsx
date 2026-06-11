@@ -232,13 +232,29 @@ export default function App() {
     let calculatedPrice = 0;
     
     if (bookingData.chaletId === "flexible") {
-      const baseRate = getNightlyRate(bookingData.ownerId, bookingData.startDate, bookingData.terraceType || "ground");
-      if (baseRate !== null) {
-        const finalNightPrice = baseRate + penaltyAddon;
-        calculatedPrice = daysCount * finalNightPrice;
+      let baseRate = 1500;
+      const bType = (bookingData.terraceType as any) || "timeshare";
+      
+      if (bookingData.ownerId && bookingData.ownerId !== "all") {
+        try {
+          const ratesDoc = await getDoc(doc(db, "owner_rates", bookingData.ownerId));
+          if (ratesDoc.exists()) {
+            const data = ratesDoc.data();
+            // Map keys "timeshare", "ownership", "hotel"
+            baseRate = Number(data[bType]) || (bType === "timeshare" ? 1500 : bType === "ownership" ? 2000 : 3000);
+          } else {
+            baseRate = bType === "timeshare" ? 1500 : bType === "ownership" ? 2000 : 3000;
+          }
+        } catch (e) {
+          console.error("Error fetching owner rates:", e);
+          baseRate = bType === "timeshare" ? 1500 : bType === "ownership" ? 2000 : 3000;
+        }
       } else {
-        calculatedPrice = 0; // Subject to owner's review, prevents clashes!
+        baseRate = bType === "timeshare" ? 1500 : bType === "ownership" ? 2000 : 3000;
       }
+      
+      const finalNightPrice = baseRate + penaltyAddon;
+      calculatedPrice = daysCount * finalNightPrice;
     } else {
       const targetChalet = chalets.find(c => c.id === bookingData.chaletId);
       if (!targetChalet) throw new Error("Chalet listing not found!");
